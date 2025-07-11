@@ -13,6 +13,8 @@ import os
 from pathlib import Path
 from decouple import config
 import dj_database_url
+from dotenv import load_dotenv
+load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -76,16 +78,44 @@ INSTALLED_APPS = [
     # Optional -- requires install using `django-allauth[socialaccount]`.
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
+
+
+    # chatbot apps
+    'rest_framework',
+    'chatbot',
 ]
+
+
+# Make sure you have:
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+
+REST_FRAMEWORK = {
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.TokenAuthentication',
+    ],
+}
+
+
+# The system prompt you defined previously:
+CHAT_SYSTEM_PROMPT = (
+    "You are the Finda shopping assistant. "
+    "Greet the user: 'Hello welcome to Finda, what can we help you find today?' "
+    "Then extract filters (brand, category, price range, location), "
+    "search the DB, and respond accordingly."
+)
 
 
 SITE_ID = 1
 
 
-ACCOUNT_USER_MODEL_USERNAME_FIELD = None
-ACCOUNT_USERNAME_REQUIRED = False
-ACCOUNT_EMAIL_REQUIRED = True
-ACCOUNT_AUTHENTICATION_METHOD = 'email'
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None  # Keep this
+ACCOUNT_LOGIN_METHODS = {"email"}
+ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
+
 
 
 SOCIALACCOUNT_ADAPTER = 'users.adapters.CustomSocialAccountAdapter'

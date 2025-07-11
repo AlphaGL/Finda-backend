@@ -24,8 +24,9 @@ from django.conf.urls import handler404
 from django.shortcuts import render
 
 urlpatterns = [
-    path('wp_ahiolu/wp_admin/admin', admin.site.urls),
+    path('admin/', admin.site.urls),
     path('', include('main.urls')),
+    path('chatbot/', include('chatbot.urls')),
     path('auth/', include('users.urls')),
     # For Google authentication
     path('accounts/', include('allauth.urls')),

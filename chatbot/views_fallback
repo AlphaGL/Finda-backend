@@ -1,0 +1,71 @@
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from .gemini_client import send_to_gemini
+from .models import ChatMessage
+from .serializers import ChatMessageSerializer
+from .utils import find_exact_matches, find_partial_matches
+
+SYSTEM_PROMPT = (
+    "You are the Finda shopping assistant. "
+    "Greet the user like: 'Hello welcome to Finda, what can we help you find today?' "
+    "Then once the user asks, extract key items (brand, category, price range, location). "
+    "Search for matching products or services in the database and respond with top matches. "
+    "If none exist, ask if they want similar matches from Finda or external suggestions."
+)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def chat_api(request):
+    user = request.user
+    incoming = request.data.get('message', '').strip()
+    # 1) retrieve last 10 messages for context
+    history_qs = ChatMessage.objects.filter(user=user).order_by('-timestamp')[:10]
+    history = []
+    # we need to reverse to chronological
+    for msg in reversed(history_qs):
+        history.append({'author': 'user', 'content': msg.user_input})
+        history.append({'author': 'assistant', 'content': msg.bot_response})
+
+    # 2) If first message ever, clear history and add system prompt
+    if not history_qs.exists():
+        history = [{'author': 'system', 'content': SYSTEM_PROMPT}]
+
+    # 3) Ask Gemini for a reply
+    bot_text = send_to_gemini(history, incoming)
+
+    # 4) Post‐processing: look for tags from Gemini to trigger DB search
+    #    *** VERY IMPORTANT: define a format convention in your prompt,
+    #    e.g. Gemini wraps search requests in <FIND|text></FIND> tags.
+    import re
+    match = re.search(r'<FIND\|(.+?)></FIND>', bot_text)
+    if match:
+        query = match.group(1)
+        results = find_exact_matches(query)
+        if results:
+            # build a list response
+            lines = ["Here are the top matches:"]
+            for obj in results:
+                url = (obj.get_absolute_url() if hasattr(obj, 'get_absolute_url')
+                       else f"/products/{obj.pk}/")
+                lines.append(
+                    f"- {obj} — ₦{getattr(obj, 'product_price', getattr(obj, 'service_price', 'N/A'))} "
+                    f"— {obj}\n  Link: https://yourdomain.com{url}"
+                )
+            bot_text = "\n".join(lines)
+        else:
+            # ask user if want partial or external
+            bot_text = (
+                "Sorry, no exact matches on Finda. "
+                "Would you like similar items on Finda, or suggestions from external sites?"
+            )
+
+    # 5) Save to DB
+    chat = ChatMessage.objects.create(
+        user=user,
+        user_input=incoming,
+        bot_response=bot_text
+    )
+    ser = ChatMessageSerializer(chat)
+
+    return Response(ser.data)
