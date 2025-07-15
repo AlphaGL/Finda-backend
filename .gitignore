@@ -1,0 +1,68 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environment
+env/
+venv/
+ENV/
+env.bak/
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Static files (collected during deploy)
+staticfiles/
+static/
+media/
+
+# Django migrations (optional — keep only if you track them)
+# **Uncomment below to ignore migrations**
+# */migrations/*.py
+# */migrations/*.pyc
+# !*/migrations/__init__.py
+
+# Environment variables
+.env
+.env.*
+
+# MyPy / Pyright / Coverage
+.mypy_cache/
+.pyright/
+.coverage
+htmlcov/
+
+# VS Code / PyCharm
+.vscode/
+.idea/
+
+# System files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Render deploy-related (optional)
+*.sqlite3
+*.pid
+*.log
+
+# Git LFS (optional: if you use LFS)
+.gitattributes
+
+# Tests / debug
+coverage.xml
+nosetests.xml
+test-results/
+
+# Pipenv / Poetry (optional)
+Pipfile
+Pipfile.lock
+poetry.lock
