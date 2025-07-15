@@ -28,6 +28,8 @@ urlpatterns = [
     path('', include('main.urls')),
     path('chatbot/', include('chatbot.urls')),
     path('auth/', include('users.urls')),
+    path('api/auth/', include('users.api.urls')),
+    path("api/main/", include("main.api.urls")),
     # For Google authentication
     path('accounts/', include('allauth.urls')),
 ]

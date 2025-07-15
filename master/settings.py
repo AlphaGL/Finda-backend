@@ -78,10 +78,10 @@ INSTALLED_APPS = [
     # Optional -- requires install using `django-allauth[socialaccount]`.
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
-
-
-    # chatbot apps
+    # rest_framework apps
     'rest_framework',
+    'rest_framework.authtoken',
+    # chatbot app
     'chatbot',
 ]
 
