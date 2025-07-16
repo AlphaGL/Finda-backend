@@ -1,5 +1,11 @@
-# constraints.txt
+# Test with minimal requirements first
+Django==5.2.4
+djangorestframework==3.16.0
+numpy==1.23.5
 tensorflow==2.12.0
-jax==0.4.36
-jaxlib==0.4.36
-numpy==1.24.4
+rasa==3.6.16
+gunicorn==20.1.0
+whitenoise==6.9.0
+psycopg2-binary==2.9.10
+python-decouple==3.8
+dj-database-url==3.0.1
