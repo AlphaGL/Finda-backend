@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'django_countries',
     'cities_light',
     'django_filters',
+    'corsheaders',
 
     # cloudinary 
     'cloudinary',
@@ -146,6 +147,7 @@ MIDDLEWARE = [
     "allauth.account.middleware.AccountMiddleware",
 
     # main middleware
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -156,6 +158,13 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
 
+CORS_ALLOW_ALL_ORIGINS = True
+
+# For production (specify your React app's domain)
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # React dev server
+    "https://your-react-app.com",  # Production React app
+]
 
 # Provider specific settings
 SOCIALACCOUNT_PROVIDERS = {

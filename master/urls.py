@@ -31,8 +31,10 @@ def api_root(request):
         'status': 'active',
         'endpoints': {
             'admin': '/admin/',
-            'chatbot': '/chatbot/',
-            'auth': '/api/auth/',
+            'chatbot': '/chatbot/api/',
+            'auth': '/api/auth/register/',
+            'auth': '/api/auth/login/',
+            'auth': '/api/auth/login/',
             'main': '/api/main/'
         }
     })
