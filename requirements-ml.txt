@@ -1,0 +1,7 @@
+rasa==3.6.16
+tensorflow==2.12.0
+jax==0.4.36
+jaxlib==0.4.36
+numpy==1.24.4   # Compatible with TF 2.12 & rasa
+tensorflow-io-gcs-filesystem==0.31.0; sys_platform == "win32"
+tensorflow-io-gcs-filesystem==0.32.0; sys_platform != "win32"
