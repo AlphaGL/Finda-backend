@@ -8,8 +8,7 @@ __pycache__/
 
 # Virtual environment
 env/
-venv/
-ENV/
+.env/
 env.bak/
 
 # Django stuff:
