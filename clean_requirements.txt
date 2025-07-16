@@ -55,6 +55,7 @@ frozenlist==1.7.0
 fsspec==2025.5.1
 future==1.0.0
 gast==0.4.0
+git-filter-repo==2.47.0
 google-ai-generativelanguage==0.6.15
 google-api-core==2.25.1
 google-api-python-client==2.176.0
@@ -75,7 +76,7 @@ huggingface-hub==0.33.2
 humanfriendly==10.0
 idna==3.10
 jax==0.4.30
-jaxlib==0.4.36
+jaxlib==0.4.30
 Jinja2==3.1.6
 jmespath==1.0.1
 joblib==1.2.0
