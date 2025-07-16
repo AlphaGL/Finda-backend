@@ -18,21 +18,37 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.http import JsonResponse
 
 # Custom error handler import
 from django.conf.urls import handler404
 from django.shortcuts import render
 
+# API root endpoint
+def api_root(request):
+    return JsonResponse({
+        'message': 'Welcome to Finda API',
+        'status': 'active',
+        'endpoints': {
+            'admin': '/admin/',
+            'chatbot': '/chatbot/',
+            'auth': '/api/auth/',
+            'main': '/api/main/'
+        }
+    })
+
 urlpatterns = [
+    path('', api_root, name='api_root'),  # Add this line for the root endpoint
     path('admin/', admin.site.urls),
-    path('', include('main.urls')),
+    # path('', include('main.urls')),
     path('chatbot/', include('chatbot.urls')),
-    path('auth/', include('users.urls')),
+    # path('auth/', include('users.urls')),
     path('api/auth/', include('users.api.urls')),
     path("api/main/", include("main.api.urls")),
     # For Google authentication
     path('accounts/', include('allauth.urls')),
 ]
+
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
@@ -42,6 +58,10 @@ if settings.DEBUG is False:
 
 # Custom 404 error handler
 def custom_404_view(request, exception):
-    return render(request, 'main/404.html', status=404)
+    return JsonResponse({
+        'error': 'Not Found',
+        'message': 'The requested endpoint does not exist',
+        'status_code': 404
+    }, status=404)
 
 handler404 = custom_404_view
