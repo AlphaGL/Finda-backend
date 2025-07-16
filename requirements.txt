@@ -109,7 +109,7 @@ multidict==5.2.0
 murmurhash==1.0.13
 networkx==2.6.3
 nltk==3.9.1
-numpy==1.23.5
+numpy==1.24.4
 oauthlib==3.3.1
 opt_einsum==3.4.0
 packaging==20.9
