@@ -26,18 +26,33 @@ from django.shortcuts import render
 
 # API root endpoint
 def api_root(request):
-    return JsonResponse({
-        'message': 'Welcome to Finda API',
-        'status': 'active',
-        'endpoints': {
-            'admin': '/admin/',
-            'chatbot': '/chatbot/api/',
-            'auth': '/api/auth/register/',
-            'auth': '/api/auth/login/',
-            'auth': '/api/auth/login/',
-            'main': '/api/main/'
-        }
-    })
+    return JsonResponse(
+        {
+    "message": "Welcome to Finda API",
+    "status": "active",
+    "endpoints": {
+        "admin": "/admin/",
+        "chatbot": "/chatbot/api/",
+        "auth_register": "/api/auth/register/",
+        "auth_login": "/api/auth/login/",
+        "auth_logout": "/api/auth/logout/",
+        "auth_me": "/api/auth/me/",
+        "auth_dashboard": "/api/auth/dashboard/",
+        "auth_password_reset": "/api/auth/password-reset/",
+        "auth_password_reset_confirm": "/api/auth/password-reset-confirm/",
+        "auth_change_password": "/api/auth/change-password/",
+        "main_api": "/api/main/",
+        "main_categories": "/api/main/categories/",
+        "main_products": "/api/main/products/",
+        "main_services": "/api/main/services/",
+        "main_home": "/api/main/home/",
+        "main_stats": "/api/main/stats/",
+        "main_search": "/api/main/search/",
+        "main_filter_options": "/api/main/filter-options/",
+        "main_payments_initiate": "/api/main/payments/initiate/",
+        "main_payments_verify": "/api/main/payments/verify/"
+            }
+        })
 
 urlpatterns = [
     path('', api_root, name='api_root'),  # Add this line for the root endpoint
