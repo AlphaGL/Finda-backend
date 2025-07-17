@@ -15,7 +15,7 @@ from django.conf import settings
 
 from .serializers import RegisterSerializer, UserSerializer, PasswordResetSerializer, PasswordResetConfirmSerializer
 from main.models import Products, Services
-from main.api.serializers import ProductSerializer, ServiceSerializer
+from main.api.serializers import ProductsSerializer, ServicesSerializer
 
 User = get_user_model()
 
