@@ -114,13 +114,13 @@ def user_dashboard_api(request):
     return Response({
         'user': UserSerializer(user).data,
         'products': {
-            'all': ProductSerializer(products, many=True).data,
-            'promoted': ProductSerializer(promoted_products, many=True).data,
+            'all': ProductsSerializer(products, many=True).data,
+            'promoted': ProductsSerializer(promoted_products, many=True).data,
             'count': products.count()
         },
         'services': {
-            'all': ServiceSerializer(services, many=True).data,
-            'promoted': ServiceSerializer(promoted_services, many=True).data,
+            'all': ServicesSerializer(services, many=True).data,
+            'promoted': ServicesSerializer(promoted_services, many=True).data,
             'count': services.count()
         }
     })
