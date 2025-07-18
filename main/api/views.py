@@ -32,8 +32,7 @@ from .permissions import IsOwnerOrReadOnly
 
 # ==== STATS FOR DASHBOARD ====
 class StatsAPIView(APIView):
-    # permission_classes = [IsAuthenticated]
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user

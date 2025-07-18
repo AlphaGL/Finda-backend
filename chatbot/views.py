@@ -3,12 +3,18 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Q
+from rest_framework.views import APIView
+from rest_framework import status
+from django.contrib.auth import authenticate
+from rest_framework.authtoken.models import Token
+from django.contrib.auth import get_user_model
 
 from .gemini_client import send_to_gemini
 from .models import ChatMessage
 from .serializers import ChatMessageSerializer
 from main.models import Products, Services, LocationCategory  # Adjust if needed
 
+User = get_user_model()
 # — SYSTEM PROMPT (used on first message only) —
 SYSTEM_PROMPT = (
     "You are the Finda shopping assistant. "
@@ -439,9 +445,38 @@ BROWSE_PATTERNS = {
     "recommend something", "i’m curious", "just looking", "let me see what you have", "anything to check out?"
 }
 
+class CustomAuthToken(APIView):
+    permission_classes = [AllowAny]  # ✅ Important
+    """
+    POST /api-token-auth/
+    Accepts email + password and returns token
+    """
+    def post(self, request, *args, **kwargs):
+        email = request.data.get('email')
+        password = request.data.get('password')
+
+        if email is None or password is None:
+            return Response({"error": "Email and password are required"}, status=400)
+
+        user = authenticate(request, email=email, password=password)
+
+        if not user:
+            return Response({"error": "Invalid credentials"}, status=401)
+
+        token, created = Token.objects.get_or_create(user=user)
+        return Response({
+            "token": token.key,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "name": user.get_full_name(),
+                # Add more user fields if needed
+            }
+        })
+
 
 @api_view(['POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticated])
 def chat_api(request):
     user = request.user
     raw_message = request.data.get('message', '').strip()
