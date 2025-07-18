@@ -163,7 +163,7 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_ALL_ORIGINS = True
 
 # For production (specify your React app's domain)
 CORS_ALLOWED_ORIGINS = [
