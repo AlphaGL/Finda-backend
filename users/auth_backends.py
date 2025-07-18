@@ -5,9 +5,15 @@ UserModel = get_user_model()
 
 class EmailOrPhoneBackend(ModelBackend):
     def authenticate(self, request, username=None, password=None, **kwargs):
+        if not username or not password:
+            return None
+
         try:
-            # Check if input is email or phone
-            user = UserModel.objects.get(email=username) if "@" in username else UserModel.objects.get(phone=username)
+            # Safely check if input is email or phone
+            if "@" in username:
+                user = UserModel.objects.get(email=username)
+            else:
+                user = UserModel.objects.get(phone=username)
         except UserModel.DoesNotExist:
             return None
 
