@@ -166,10 +166,12 @@ MIDDLEWARE = [
 CORS_ALLOW_ALL_ORIGINS = True
 
 # For production (specify your React app's domain)
-# CORS_ALLOWED_ORIGINS = [
-#     "http://localhost:3000",  # React dev server
-#     "https://your-react-app.com",  # Production React app
-# ]
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",  # React dev server
+    "https://your-react-app.com",  # Production React app
+    "https://finda-api-chatbot.vercel.app",
+]
+
 
 # Provider specific settings
 SOCIALACCOUNT_PROVIDERS = {
