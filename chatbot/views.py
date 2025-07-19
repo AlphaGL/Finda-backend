@@ -1,8 +1,11 @@
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth import authenticate, get_user_model
+from django.utils.decorators import method_decorator
+from django.views.decorators.cache import never_cache
+from django.http import JsonResponse
 
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.authentication import TokenAuthentication
+from rest_framework.authentication import TokenAuthentication, SessionAuthentication
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
@@ -450,130 +453,290 @@ BROWSE_PATTERNS = {
     "recommend something", "i’m curious", "just looking", "let me see what you have", "anything to check out?"
 }
 
+
+@method_decorator(csrf_exempt, name='dispatch')
 class CustomAuthToken(APIView):
-    permission_classes = [AllowAny]  # ✅ Important
     """
-    POST /api-token-auth/
-    Accepts email + password and returns token
+    Custom token authentication endpoint that works with email-based login
+    POST /api/auth/login/
     """
+    permission_classes = [AllowAny]
+    authentication_classes = []  # No authentication required for login
+
     def post(self, request, *args, **kwargs):
-        email = request.data.get('email')
-        password = request.data.get('password')
+        try:
+            # Get credentials from request
+            email = request.data.get('email', '').strip().lower()
+            password = request.data.get('password', '')
 
-        if email is None or password is None:
-            return Response({"error": "Email and password are required"}, status=400)
+            # Validate input
+            if not email or not password:
+                return Response({
+                    "error": "Email and password are required",
+                    "success": False
+                }, status=status.HTTP_400_BAD_REQUEST)
 
-        user = authenticate(request, email=email, password=password)
+            # Authenticate user using your custom backend
+            user = authenticate(request, email=email, password=password)
+            
+            if not user:
+                # Try to get more specific error info
+                try:
+                    user_exists = User.objects.filter(email=email).exists()
+                    if not user_exists:
+                        error_msg = "No account found with this email address"
+                    else:
+                        error_msg = "Invalid password"
+                except Exception:
+                    error_msg = "Invalid email or password"
+                
+                return Response({
+                    "error": error_msg,
+                    "success": False
+                }, status=status.HTTP_401_UNAUTHORIZED)
 
-        if not user:
-            return Response({"error": "Invalid credentials"}, status=401)
+            # Check if user is active
+            if not user.is_active:
+                return Response({
+                    "error": "Account is deactivated",
+                    "success": False
+                }, status=status.HTTP_401_UNAUTHORIZED)
 
-        token, created = Token.objects.get_or_create(user=user)
+            # Create or get token
+            token, created = Token.objects.get_or_create(user=user)
+            
+            # Return success response
+            return Response({
+                "success": True,
+                "token": token.key,
+                "user": {
+                    "id": user.id,
+                    "email": user.email,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "full_name": user.get_full_name() if hasattr(user, 'get_full_name') else f"{user.first_name} {user.last_name}".strip(),
+                    "is_active": user.is_active,
+                    "date_joined": user.date_joined.isoformat() if hasattr(user, 'date_joined') else None,
+                }
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            # Log the actual error for debugging
+            print(f"Login error: {str(e)}")
+            return Response({
+                "error": "An error occurred during login. Please try again.",
+                "success": False,
+                "debug_info": str(e) if request.user.is_superuser else None
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class LogoutView(APIView):
+    """
+    Logout endpoint - deletes the user's token
+    POST /api/auth/logout/
+    """
+    authentication_classes = [TokenAuthentication, SessionAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # Delete the user's token
+            if hasattr(request.user, 'auth_token'):
+                request.user.auth_token.delete()
+            
+            return Response({
+                "success": True,
+                "message": "Successfully logged out"
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                "error": "Error during logout",
+                "success": False
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+def verify_token(request):
+    """
+    Verify if the current token is valid
+    GET /api/auth/verify/
+    """
+    try:
         return Response({
-            "token": token.key,
+            "success": True,
             "user": {
-                "id": user.id,
-                "email": user.email,
-                "name": user.get_full_name(),
-                # Add more user fields if needed
+                "id": request.user.id,
+                "email": request.user.email,
+                "first_name": request.user.first_name,
+                "last_name": request.user.last_name,
+                "full_name": request.user.get_full_name() if hasattr(request.user, 'get_full_name') else f"{request.user.first_name} {request.user.last_name}".strip(),
+                "is_active": request.user.is_active,
             }
         })
+    except Exception as e:
+        return Response({
+            "success": False,
+            "error": "Invalid token"
+        }, status=status.HTTP_401_UNAUTHORIZED)
 
-# @csrf_exempt
-# @api_view(['POST'])
-# @authentication_classes([TokenAuthentication])
-# @permission_classes([IsAuthenticated])
+
 @csrf_exempt
 @api_view(['POST'])
-@authentication_classes([TokenAuthentication])
+@authentication_classes([TokenAuthentication, SessionAuthentication])
 @permission_classes([IsAuthenticated])
 def chat_api(request):
-    user = request.user
-    raw_message = request.data.get('message', '').strip()
-    if not raw_message:
-        return Response({"detail": "Please send a non-empty message."}, status=400)
-    lower = raw_message.lower()
-
-    # 1) Chat history
-    recent = ChatMessage.objects.filter(user=user).order_by('-timestamp')[:10]
-    history = []
-    for msg in reversed(recent):
-        history.append({'author': 'user', 'content': msg.user_input})
-        history.append({'author': 'assistant', 'content': msg.bot_response})
-
-    # 2) Add system prompt if new user
-    if not recent.exists():
-        history.insert(0, {'author': 'system', 'content': SYSTEM_PROMPT})
-
+    """
+    Main chat API endpoint
+    POST /api/chat/
+    """
     try:
-        # 3) Intent: Greeting
-        if lower in GREETINGS:
-            bot_text = "Hello, welcome to Finda! What can we help you find today?"
+        user = request.user
+        raw_message = request.data.get('message', '').strip()
+        
+        if not raw_message:
+            return Response({
+                "detail": "Please send a non-empty message.",
+                "success": False
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        lower = raw_message.lower()
 
-        # 4) Intent: Thank-you
-        elif any(word in lower for word in THANKS):
-            bot_text = "You're welcome! Let me know if you’d like to find anything else."
+        # 1) Get chat history
+        recent = ChatMessage.objects.filter(user=user).order_by('-timestamp')[:10]
+        history = []
+        for msg in reversed(recent):
+            history.append({'author': 'user', 'content': msg.user_input})
+            history.append({'author': 'assistant', 'content': msg.bot_response})
 
-        # 5) Intent: Browse categories
-        elif any(pat in lower for pat in BROWSE_PATTERNS):
-            categories = [display for key, display in LocationCategory.CATEGORY_CHOICES if key != 'all']
-            bot_text = (
-                "Sure! Here are some categories you can explore:\n" +
-                "\n".join(f"- {cat}" for cat in categories) +
-                "\n\nOr just type in what you're looking for (e.g., 'Nike shoes', 'barber services')."
-            )
+        # 2) Add system prompt if new user
+        if not recent.exists():
+            history.insert(0, {'author': 'system', 'content': SYSTEM_PROMPT})
 
-        else:
-            # 6) Check if previous message offered external suggestions
-            last_bot_msg = history[-1]['content'].lower() if history and history[-1]['author'] == 'assistant' else ""
-            asked_external = "external stores" in last_bot_msg
+        # 3) Process the message based on intent
+        try:
+            # Intent: Greeting
+            if lower in GREETINGS:
+                bot_text = "Hello, welcome to Finda! What can we help you find today?"
 
-            # 7) Positive reply → Use Gemini
-            if asked_external and any(word in lower for word in POSITIVE_CONFIRMATIONS):
-                bot_text = send_to_gemini(history, raw_message)
+            # Intent: Thank-you
+            elif any(word in lower for word in THANKS):
+                bot_text = "You're welcome! Let me know if you'd like to find anything else."
 
-            # 8) Negative → Proceed with new query
-            elif asked_external and any(word in lower for word in NEGATIVE_CONFIRMATIONS):
-                raise ValueError("Restarting DB search...")
+            # Intent: Browse categories
+            elif any(pat in lower for pat in BROWSE_PATTERNS):
+                categories = [display for key, display in LocationCategory.CATEGORY_CHOICES if key != 'all']
+                bot_text = (
+                    "Sure! Here are some categories you can explore:\n" +
+                    "\n".join(f"- {cat}" for cat in categories) +
+                    "\n\nOr just type in what you're looking for (e.g., 'Nike shoes', 'barber services')."
+                )
 
             else:
-                # 9) Search Finda database first
-                prod_qs = Products.objects.filter(
-                    Q(product_name__icontains=raw_message) |
-                    Q(product_description__icontains=raw_message) |
-                    Q(product_brand__icontains=raw_message),
-                    product_status='published'
-                )
-                serv_qs = Services.objects.filter(
-                    Q(service_name__icontains=raw_message) |
-                    Q(service_description__icontains=raw_message),
-                    service_status='published'
-                )
+                # Check if previous message offered external suggestions
+                last_bot_msg = history[-1]['content'].lower() if history and history[-1]['author'] == 'assistant' else ""
+                asked_external = "external stores" in last_bot_msg
 
-                matches = list(prod_qs) + list(serv_qs)
-                matches.sort(key=lambda obj: obj.average_rating(), reverse=True)
-
-                if matches:
-                    top3 = matches[:3]
-                    response_lines = ["I found these on Finda:"]
-                    for obj in top3:
-                        url = getattr(obj, 'get_absolute_url', lambda: f'/products/{obj.pk}/')()
-                        price = getattr(obj, 'product_price', getattr(obj, 'service_price', 'N/A'))
-                        response_lines.append(f"- {obj} — ₦{price}\n  Link: https://yourdomain.com{url}")
-                    response_lines.append(
-                        "\nWould you also like suggestions from external stores (e.g., Amazon, Jumia)?"
-                    )
-                    bot_text = "\n".join(response_lines)
-                else:
-                    # 10) No DB match → use Gemini automatically
+                # Positive reply → Use Gemini
+                if asked_external and any(word in lower for word in POSITIVE_CONFIRMATIONS):
                     bot_text = send_to_gemini(history, raw_message)
-    except Exception:
-        # 11) Final fallback
-        bot_text = send_to_gemini(history, raw_message)
-    # 12) Save conversation
-    ChatMessage.objects.create(
-        user=user,
-        user_input=raw_message,
-        bot_response=bot_text
-    )
-    return Response({"reply": bot_text})
+
+                # Negative → Proceed with new query
+                elif asked_external and any(word in lower for word in NEGATIVE_CONFIRMATIONS):
+                    raise ValueError("Restarting DB search...")
+
+                else:
+                    # Search Finda database first
+                    prod_qs = Products.objects.filter(
+                        Q(product_name__icontains=raw_message) |
+                        Q(product_description__icontains=raw_message) |
+                        Q(product_brand__icontains=raw_message),
+                        product_status='published'
+                    )
+                    serv_qs = Services.objects.filter(
+                        Q(service_name__icontains=raw_message) |
+                        Q(service_description__icontains=raw_message),
+                        service_status='published'
+                    )
+
+                    matches = list(prod_qs) + list(serv_qs)
+                    matches.sort(key=lambda obj: obj.average_rating(), reverse=True)
+
+                    if matches:
+                        top3 = matches[:3]
+                        response_lines = ["I found these on Finda:"]
+                        for obj in top3:
+                            url = getattr(obj, 'get_absolute_url', lambda: f'/products/{obj.pk}/')()
+                            price = getattr(obj, 'product_price', getattr(obj, 'service_price', 'N/A'))
+                            response_lines.append(f"- {obj} — ₦{price}\n  Link: https://yourdomain.com{url}")
+                        response_lines.append(
+                            "\nWould you also like suggestions from external stores (e.g., Amazon, Jumia)?"
+                        )
+                        bot_text = "\n".join(response_lines)
+                    else:
+                        # No DB match → use Gemini automatically
+                        bot_text = send_to_gemini(history, raw_message)
+                        
+        except Exception as e:
+            # Fallback to Gemini
+            print(f"Chat processing error: {str(e)}")
+            bot_text = send_to_gemini(history, raw_message)
+
+        # 4) Save conversation
+        ChatMessage.objects.create(
+            user=user,
+            user_input=raw_message,
+            bot_response=bot_text
+        )
+        
+        return Response({
+            "success": True,
+            "reply": bot_text
+        }, status=status.HTTP_200_OK)
+
+    except Exception as e:
+        print(f"Chat API error: {str(e)}")
+        return Response({
+            "success": False,
+            "error": "An error occurred while processing your message",
+            "debug_info": str(e) if request.user.is_superuser else None
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@authentication_classes([TokenAuthentication, SessionAuthentication])
+@permission_classes([IsAuthenticated])
+def chat_history(request):
+    """
+    Get user's chat history
+    GET /api/chat/history/
+    """
+    try:
+        messages = ChatMessage.objects.filter(user=request.user).order_by('-timestamp')[:50]
+        serializer = ChatMessageSerializer(messages, many=True)
+        
+        return Response({
+            "success": True,
+            "messages": serializer.data
+        })
+    except Exception as e:
+        return Response({
+            "success": False,
+            "error": "Error fetching chat history"
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+# Health check endpoint
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check(request):
+    """
+    Simple health check endpoint
+    GET /api/health/
+    """
+    return Response({
+        "status": "healthy",
+        "message": "Finda Chat API is running"
+    })
