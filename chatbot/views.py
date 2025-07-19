@@ -8,7 +8,7 @@ from rest_framework import status
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import get_user_model
-
+from django.views.decorators.csrf import csrf_exempt
 from .gemini_client import send_to_gemini
 from .models import ChatMessage
 from .serializers import ChatMessageSerializer
@@ -474,7 +474,7 @@ class CustomAuthToken(APIView):
             }
         })
 
-
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def chat_api(request):
