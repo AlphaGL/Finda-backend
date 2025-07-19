@@ -8,7 +8,8 @@ from .views import (
     user_dashboard_api,
     password_reset_api,
     password_reset_confirm_api,
-    change_password_api
+    change_password_api,
+    csrf,
 )
 
 urlpatterns = [
@@ -25,4 +26,6 @@ urlpatterns = [
     path('password-reset/', password_reset_api, name='api-password-reset'),
     path('password-reset-confirm/', password_reset_confirm_api, name='api-password-reset-confirm'),
     path('change-password/', change_password_api, name='api-change-password'),
+    path('api/csrf/', csrf),
+
 ]

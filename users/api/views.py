@@ -19,6 +19,13 @@ from main.api.serializers import ProductsSerializer, ServicesSerializer
 
 User = get_user_model()
 
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.http import JsonResponse
+
+@ensure_csrf_cookie
+def csrf(request):
+    return JsonResponse({'detail': 'CSRF cookie set'})
+
 class RegisterAPI(generics.CreateAPIView):
     """
     POST /api/auth/register/
