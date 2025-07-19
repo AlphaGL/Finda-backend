@@ -163,13 +163,29 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
 
-CORS_ALLOW_ALL_ORIGINS = True
+# Add these settings to your Django settings.py file
 
-# For production (specify your React app's domain)
-# CORS_ALLOWED_ORIGINS = [
-#     "http://localhost:3000",  # React dev server
-#     "https://your-react-app.com",  # Production React app
-# ]
+# CSRF Settings for React Frontend
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",  # Your React dev server
+    "https://yourdomain.com",  # Your production domain when you deploy
+]
+
+# Allow CSRF cookies to be sent cross-origin
+CSRF_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
+CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read the cookie
+
+# Session cookie settings (if you're using session authentication)
+SESSION_COOKIE_SAMESITE = 'None'
+SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
+
+# Update your CORS settings
+CORS_ALLOW_CREDENTIALS = True  # This is important!
+
+# You might also need this if you're having issues:
+CSRF_USE_SESSIONS = False
+CSRF_COOKIE_NAME = 'csrftoken'
 
 # Provider specific settings
 SOCIALACCOUNT_PROVIDERS = {
@@ -188,12 +204,6 @@ SOCIALACCOUNT_PROVIDERS = {
 
 
 SOCIALACCOUNT_LOGIN_ON_GET = True
-
-
-
-
-
-
 
 
 ROOT_URLCONF = 'master.urls'

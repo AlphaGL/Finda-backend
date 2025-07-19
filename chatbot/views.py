@@ -1,20 +1,25 @@
-from rest_framework.decorators import api_view, permission_classes
+from django.views.decorators.csrf import csrf_exempt
+from django.contrib.auth import authenticate, get_user_model
+
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status
-from django.db.models import Q
-from rest_framework.views import APIView
-from rest_framework import status
-from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
-from django.contrib.auth import get_user_model
-from django.views.decorators.csrf import csrf_exempt
+from rest_framework.views import APIView
+
+from django.db.models import Q
+
 from .gemini_client import send_to_gemini
 from .models import ChatMessage
 from .serializers import ChatMessageSerializer
+
 from main.models import Products, Services, LocationCategory  # Adjust if needed
 
 User = get_user_model()
+
+
 # — SYSTEM PROMPT (used on first message only) —
 SYSTEM_PROMPT = (
     "You are the Finda shopping assistant. "
@@ -474,8 +479,13 @@ class CustomAuthToken(APIView):
             }
         })
 
+# @csrf_exempt
+# @api_view(['POST'])
+# @authentication_classes([TokenAuthentication])
+# @permission_classes([IsAuthenticated])
 @csrf_exempt
 @api_view(['POST'])
+@authentication_classes([TokenAuthentication])
 @permission_classes([IsAuthenticated])
 def chat_api(request):
     user = request.user
