@@ -162,6 +162,9 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
+CSRF_TRUSTED_ORIGINS = [
+    "https://finda-api-chatbot.vercel.app",
+]
 
 CORS_ALLOW_ALL_ORIGINS = True
 
