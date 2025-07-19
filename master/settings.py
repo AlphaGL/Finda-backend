@@ -25,7 +25,12 @@ import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 
+
+
+
+
 TEMPLATES_DIRS = os.path.join(BASE_DIR, 'templates')
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -36,10 +41,13 @@ SECRET_KEY = config('SECRET_KEY')
 # For debug
 DEBUG = config('DEBUG', default=False, cast=bool)
 
+
 #### Local Test
 ALLOWED_HOSTS =['*']
 
+
 # Application definition
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -51,6 +59,9 @@ INSTALLED_APPS = [
     # My apps
     'main.apps.MainConfig',
     'users.apps.UsersConfig',
+
+
+    # https://youtu.be/GXz2xslhg8E?si=exzcnzs-MEKnkxcY
 
     # Third-party apps
     'django_countries',
@@ -75,17 +86,17 @@ INSTALLED_APPS = [
     'chatbot',
 ]
 
+
 # Make sure you have:
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# FIXED: Updated REST_FRAMEWORK configuration
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.AllowAny',  # Changed from IsAuthenticated to allow login
+        'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
+        'rest_framework.authentication.TokenAuthentication',
     ],
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
@@ -93,6 +104,7 @@ REST_FRAMEWORK = {
         'rest_framework.filters.OrderingFilter',
     ],
 }
+
 
 # The system prompt you defined previously:
 CHAT_SYSTEM_PROMPT = (
@@ -102,13 +114,18 @@ CHAT_SYSTEM_PROMPT = (
     "search the DB, and respond accordingly."
 )
 
+
 SITE_ID = 1
+
 
 ACCOUNT_USER_MODEL_USERNAME_FIELD = None  # Keep this
 ACCOUNT_LOGIN_METHODS = {"email"}
 ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
 
+
+
 SOCIALACCOUNT_ADAPTER = 'users.adapters.CustomSocialAccountAdapter'
+
 
 # CLOUDINARY-DJANGO INTEGRATION
 CLOUDINARY_STORAGE = {
@@ -125,69 +142,34 @@ cloudinary.config(
   api_secret = config('CLOUDINARY_API_SECRET') 
 )
 
+
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
 
 MIDDLEWARE = [
+
     # For Google Authentication
-    # Add the account middleware:
+        # Add the account middleware:
     "allauth.account.middleware.AccountMiddleware",
-    
-    # FIXED: Moved CORS middleware to the top
+
+    # main middleware
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',  # Moved up for static files
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
 
-# FIXED: Updated CORS settings for proper API access
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",    # React default port
-    "http://localhost:5173",    # Vite default port
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-]
+CORS_ALLOW_ALL_ORIGINS = True
 
-# For development - you can use this instead of specific origins
-# CORS_ALLOW_ALL_ORIGINS = True  # Only for development!
-
-CORS_ALLOW_CREDENTIALS = True
-
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-]
-
-# FIXED: Updated CSRF settings
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:5173",  # Your React dev server
-    "http://localhost:3000",  # Alternative React port
-    "https://yourdomain.com",  # Your production domain when you deploy
-]
-
-# CSRF settings for API
-CSRF_COOKIE_SAMESITE = 'Lax'  # Changed from 'None' for better compatibility
-CSRF_COOKIE_SECURE = False  # Set to True in production with HTTPS
-CSRF_COOKIE_HTTPONLY = False  # Allow JavaScript to read the cookie
-
-# Session cookie settings
-SESSION_COOKIE_SAMESITE = 'Lax'  # Changed from 'None'
-SESSION_COOKIE_SECURE = False  # Set to True in production with HTTPS
-
-# CSRF settings
-CSRF_USE_SESSIONS = False
-CSRF_COOKIE_NAME = 'csrftoken'
+# For production (specify your React app's domain)
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:3000",  # React dev server
+#     "https://your-react-app.com",  # Production React app
+# ]
 
 # Provider specific settings
 SOCIALACCOUNT_PROVIDERS = {
@@ -204,7 +186,15 @@ SOCIALACCOUNT_PROVIDERS = {
     }
 }
 
+
 SOCIALACCOUNT_LOGIN_ON_GET = True
+
+
+
+
+
+
+
 
 ROOT_URLCONF = 'master.urls'
 
@@ -226,8 +216,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'master.wsgi.application'
 
+
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
+
 
 CLOUDINARY_URL = config('CLOUDINARY_URL')
 
@@ -239,6 +231,18 @@ DATABASES = {
         ssl_require=True
     ),
 }
+
+
+# default django sqlite db
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.sqlite3',
+#         'NAME': BASE_DIR / 'db.sqlite3',
+#     },
+# }
+
+
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
@@ -266,6 +270,7 @@ AUTHENTICATION_BACKENDS = [
     # For Google Authentication
     # `allauth` specific authentication methods, such as login by email
     'allauth.account.auth_backends.AuthenticationBackend',
+
 ]
 
 # Paystack Keys (should ideally be moved to .env)
@@ -273,17 +278,30 @@ PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY', default='sk_test_3e89989f81e
 PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY', default='pk_test_82cbf50854af160f931f8b9e6f9c84af8489536e')
 PAYSTACK_PAYMENT_URL = 'https://api.paystack.co/transaction/initialize'
 
+
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
 LANGUAGE_CODE = 'en-us'
+
 TIME_ZONE = 'UTC'
+
 USE_I18N = True
+
 USE_TZ = True
 
 LOGIN_REDIRECT_URL = '/'
 
-# Email configuration
+# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+# EMAIL_HOST = 'smtp.gmail.com'
+# EMAIL_PORT = 587
+# EMAIL_USE_TLS = True
+# EMAIL_USE_SSL = True  
+# EMAIL_HOST_USER = config('EMAIL_HOST_USER')
+# EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
+# DEFAULT_FROM_EMAIL = 'Ahiolu <ibeawuchichukwugozirim@gmail.com>'
+
+
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 465
@@ -291,6 +309,9 @@ EMAIL_USE_SSL = True
 EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = 'ibeawuchichukwugozirim@gmail.com'
+
+
+
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.1/howto/static-files/
@@ -300,6 +321,10 @@ STATICFILES_DIRS = [os.path.join(BASE_DIR, 'main/static')]  # Ensure this is cor
 
 # In production, you may need:
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles') 
+
+
+# MEDIA_URL = '/media/'  
+# MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
