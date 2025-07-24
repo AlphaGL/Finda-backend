@@ -16,7 +16,7 @@ class CountryAdmin(admin.ModelAdmin):
     list_display = [
         'flag_display', 'name', 'code', 'phone_code', 
         'currency_display', 'continent', 'states_count', 
-        'products_count', 'services_count', 'is_active'
+        'products_count', 'services_count', 'sort_order', 'is_active'
     ]
     list_filter = ['continent', 'is_active', 'currency_code']
     search_fields = ['name', 'code', 'phone_code']
@@ -78,7 +78,7 @@ class CountryAdmin(admin.ModelAdmin):
 class StateAdmin(admin.ModelAdmin):
     list_display = [
         'name', 'country_flag', 'code', 'type', 
-        'cities_count', 'products_count', 'services_count', 'is_active'
+        'cities_count', 'products_count', 'services_count', 'sort_order', 'is_active'
     ]
     list_filter = ['country', 'type', 'is_active']
     search_fields = ['name', 'code', 'country__name']
@@ -203,7 +203,7 @@ class CategoryAdmin(admin.ModelAdmin):
     list_display = [
         'icon_display', 'name', 'category_type', 'parent', 
         'subcategories_count', 'products_count', 'services_count',
-        'is_featured', 'is_active'
+        'sort_order', 'is_featured', 'is_active'
     ]
     list_filter = ['category_type', 'parent', 'is_featured', 'is_active']
     search_fields = ['name', 'description']
@@ -358,7 +358,7 @@ class ServicesAdmin(admin.ModelAdmin):
     list_display = [
         'service_name', 'provider_name', 'category', 'price_range_display',
         'location_display', 'service_status', 'provider_experience',
-        'rating_display', 'views_count', 'is_promoted', 'is_featured'
+        'rating_display', 'views_count', 'is_verified', 'is_promoted', 'is_featured'
     ]
     list_filter = [
         'service_status', 'provider_experience', 'category', 'country',

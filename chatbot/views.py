@@ -12,7 +12,7 @@ from django.contrib.auth import get_user_model
 from .gemini_client import send_to_gemini
 from .models import ChatMessage
 from .serializers import ChatMessageSerializer
-from main.models import Products, Services, LocationCategory  # Adjust if needed
+from main.models import Products, Services, Category  # Adjust if needed
 
 User = get_user_model()
 # — SYSTEM PROMPT (used on first message only) —
@@ -506,7 +506,7 @@ def chat_api(request):
 
         # 5) Intent: Browse categories
         elif any(pat in lower for pat in BROWSE_PATTERNS):
-            categories = [display for key, display in LocationCategory.CATEGORY_CHOICES if key != 'all']
+            categories = [display for key, display in Category.CATEGORY_CHOICES if key != 'all']
             bot_text = (
                 "Sure! Here are some categories you can explore:\n" +
                 "\n".join(f"- {cat}" for cat in categories) +
