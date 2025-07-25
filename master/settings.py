@@ -15,21 +15,16 @@ from decouple import config
 import dj_database_url
 from dotenv import load_dotenv
 load_dotenv()
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # cloudinary imports
-
 import cloudinary
 import cloudinary.uploader
 import cloudinary.api
 
-
-
-
-
 TEMPLATES_DIRS = os.path.join(BASE_DIR, 'templates')
-
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
@@ -40,13 +35,10 @@ SECRET_KEY = config('SECRET_KEY')
 # For debug
 DEBUG = config('DEBUG', default=False, cast=bool)
 
-
 #### Local Test
-ALLOWED_HOSTS =['*']
-
+ALLOWED_HOSTS = ['*']
 
 # Application definition
-
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -58,9 +50,7 @@ INSTALLED_APPS = [
     # My apps
     'main.apps.MainConfig',
     'users.apps.UsersConfig',
-
-
-    # https://youtu.be/GXz2xslhg8E?si=exzcnzs-MEKnkxcY
+    'chatbot',
 
     # Third-party apps
     'django_countries',
@@ -75,56 +65,136 @@ INSTALLED_APPS = [
     # For Google Authentication
     'allauth',
     'allauth.account',
-    # Optional -- requires install using `django-allauth[socialaccount]`.
     'allauth.socialaccount',
     'allauth.socialaccount.providers.google',
+    
     # rest_framework apps
     'rest_framework',
     'rest_framework.authtoken',
-    # chatbot app
-    'chatbot',
 ]
 
+SITE_ID = 1
 
-# Make sure you have:
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+# ===========================
+#  CHATBOT CONFIGURATION
+# ===========================
 
+# Google AI (Gemini) Configuration
+GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', config('GOOGLE_API_KEY', default=''))
+
+# Chatbot System Prompt
+CHAT_SYSTEM_PROMPT = """
+You are Finda AI, the intelligent shopping assistant for Finda Marketplace - Africa's premier e-commerce platform.
+
+Your primary role is to help users find products and services on Finda first, then suggest external alternatives if needed.
+
+Core Capabilities:
+1. 🛍️ Product Search: Help users find specific products with detailed filtering
+2. 🔧 Service Search: Connect users with service providers and professionals  
+3. 🖼️ Visual Search: Analyze product images to identify and find similar items
+4. 🎤 Voice Search: Process voice queries naturally
+5. 🌍 Location-aware: Provide region-specific results and recommendations
+6. 💡 Smart Suggestions: Offer alternatives and related products/services
+
+Always prioritize Finda's internal database before suggesting external sources.
+Be friendly, helpful, and use appropriate emojis to make interactions engaging.
+"""
+
+# Voice Processing Settings
+VOICE_PROCESSING = {
+    'MAX_FILE_SIZE': 10 * 1024 * 1024,  # 10MB
+    'ALLOWED_FORMATS': ['.mp3', '.wav', '.m4a', '.ogg', '.flac'],
+    'RECOGNITION_ENGINES': ['google'],  # Can add 'whisper', 'azure' later
+    'DEFAULT_LANGUAGE': 'en-US',
+    'SUPPORTED_LANGUAGES': ['en-US', 'en-GB', 'fr-FR', 'es-ES', 'de-DE'],
+}
+
+# Image Processing Settings
+IMAGE_PROCESSING = {
+    'MAX_FILE_SIZE': 5 * 1024 * 1024,  # 5MB
+    'MAX_DIMENSIONS': (4000, 4000),
+    'OPTIMIZATION_SIZE': (800, 600),
+    'ALLOWED_FORMATS': ['.jpg', '.jpeg', '.png', '.webp'],
+    'ANALYSIS_ENGINES': ['gemini'],  # Can add 'gpt4v', 'azure' later
+}
+
+# Chatbot Behavior Settings
+CHATBOT_SETTINGS = {
+    'MAX_CONTEXT_MESSAGES': 10,
+    'SESSION_TIMEOUT_HOURS': 24,
+    'MAX_SEARCH_RESULTS': 5,
+    'EXTERNAL_SEARCH_DELAY': 2,  # seconds
+    'RESPONSE_TIMEOUT': 30,  # seconds
+    'MAX_RESPONSE_LENGTH': 2000,
+    'ENABLE_ANALYTICS': True,
+    'ENABLE_FEEDBACK': True,
+}
+
+# External Source Configuration
+EXTERNAL_SOURCES = {
+    'JUMIA': {
+        'name': 'Jumia',
+        'base_url': 'https://www.jumia.com.ng',
+        'enabled': True,
+        'priority': 1
+    },
+    'KONGA': {
+        'name': 'Konga',
+        'base_url': 'https://www.konga.com',
+        'enabled': True,
+        'priority': 2
+    },
+    'AMAZON': {
+        'name': 'Amazon',
+        'base_url': 'https://www.amazon.com',
+        'enabled': True,
+        'priority': 3
+    },
+    'ALIEXPRESS': {
+        'name': 'AliExpress',
+        'base_url': 'https://www.aliexpress.com',
+        'enabled': True,
+        'priority': 4
+    }
+}
+
+# REST Framework Configuration
 REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
-        'rest_framework.authentication.TokenAuthentication',
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
+        'rest_framework.parsers.MultiPartParser',
+        'rest_framework.parsers.FormParser',
     ],
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle'
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '100/hour',
+        'user': '1000/hour',
+        'chatbot': '500/hour',
+    }
 }
 
-
-# The system prompt you defined previously:
-CHAT_SYSTEM_PROMPT = (
-    "You are the Finda shopping assistant. "
-    "Greet the user: 'Hello welcome to Finda, what can we help you find today?' "
-    "Then extract filters (brand, category, price range, location), "
-    "search the DB, and respond accordingly."
-)
-
-
-SITE_ID = 1
-
-
-ACCOUNT_USER_MODEL_USERNAME_FIELD = None  # Keep this
+# Authentication Configuration
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
 ACCOUNT_LOGIN_METHODS = {"email"}
 ACCOUNT_SIGNUP_FIELDS = ["email*", "password1*", "password2*"]
-
-
-
 SOCIALACCOUNT_ADAPTER = 'users.adapters.CustomSocialAccountAdapter'
-
 
 # CLOUDINARY-DJANGO INTEGRATION
 CLOUDINARY_STORAGE = {
@@ -136,20 +206,18 @@ CLOUDINARY_STORAGE = {
 
 # CLOUDINARY CORE CONFIGURATION (required to prevent the ValueError)
 cloudinary.config( 
-  cloud_name = config('CLOUDINARY_CLOUD_NAME'), 
-  api_key = config('CLOUDINARY_API_KEY'), 
-  api_secret = config('CLOUDINARY_API_SECRET') 
+    cloud_name=config('CLOUDINARY_CLOUD_NAME'), 
+    api_key=config('CLOUDINARY_API_KEY'), 
+    api_secret=config('CLOUDINARY_API_SECRET') 
 )
 
-
 DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+CLOUDINARY_URL = config('CLOUDINARY_URL')
 
 MIDDLEWARE = [
-
     # For Google Authentication
-        # Add the account middleware:
     "allauth.account.middleware.AccountMiddleware",
-
+    
     # main middleware
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -161,6 +229,8 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
+
+# CORS Settings
 CSRF_TRUSTED_ORIGINS = [
     "https://finda-api-chatbot.vercel.app",
 ]
@@ -170,18 +240,18 @@ CORS_ALLOW_ALL_ORIGINS = True
 # For production (specify your React app's domain)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # React dev server
+    "http://127.0.0.1:3000",
     "https://your-react-app.com",  # Production React app
     "https://finda-api-chatbot.vercel.app",
+    "https://findamarketplace.com",
 ]
 
+CORS_ALLOW_CREDENTIALS = True
 
 # Provider specific settings
 SOCIALACCOUNT_PROVIDERS = {
     # For Google Authentication
     'google': {
-        # For each OAuth based provider, either add a ``SocialApp``
-        # (``socialaccount`` app) containing the required client
-        # credentials, or list them here:
         'APP': {
             'client_id': config('CLIENT_ID'),
             'secret': config('SECRET'),
@@ -190,15 +260,7 @@ SOCIALACCOUNT_PROVIDERS = {
     }
 }
 
-
 SOCIALACCOUNT_LOGIN_ON_GET = True
-
-
-
-
-
-
-
 
 ROOT_URLCONF = 'master.urls'
 
@@ -220,28 +282,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'master.wsgi.application'
 
-
 # Database
-# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-
-
-CLOUDINARY_URL = config('CLOUDINARY_URL')
-
 DATABASES = {
-
     # Supabase db
     'default': dj_database_url.parse(
         'postgresql://postgres.brvnfupexhjytdxiubjj:Ibeawuchi@242@aws-0-eu-north-1.pooler.supabase.com:6543/postgres'
     ),
 }
 
-
-
-
 # Password validation
-# https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators
-
 AUTH_PASSWORD_VALIDATORS = [
+    # Commented out for development - uncomment for production
     # {
     #     'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
     # },
@@ -260,11 +311,8 @@ AUTH_USER_MODEL = 'users.CustomUser'
 AUTHENTICATION_BACKENDS = [
     'users.auth_backends.EmailOrPhoneBackend',  # Custom backend
     'django.contrib.auth.backends.ModelBackend',  # Default Django backend
-
     # For Google Authentication
-    # `allauth` specific authentication methods, such as login by email
     'allauth.account.auth_backends.AuthenticationBackend',
-
 ]
 
 # Paystack Keys (should ideally be moved to .env)
@@ -272,30 +320,15 @@ PAYSTACK_SECRET_KEY = config('PAYSTACK_SECRET_KEY', default='sk_test_3e89989f81e
 PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY', default='pk_test_82cbf50854af160f931f8b9e6f9c84af8489536e')
 PAYSTACK_PAYMENT_URL = 'https://api.paystack.co/transaction/initialize'
 
-
 # Internationalization
-# https://docs.djangoproject.com/en/5.1/topics/i18n/
-
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
 LOGIN_REDIRECT_URL = '/'
 
-# EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-# EMAIL_HOST = 'smtp.gmail.com'
-# EMAIL_PORT = 587
-# EMAIL_USE_TLS = True
-# EMAIL_USE_SSL = True  
-# EMAIL_HOST_USER = config('EMAIL_HOST_USER')
-# EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
-# DEFAULT_FROM_EMAIL = 'Ahiolu <ibeawuchichukwugozirim@gmail.com>'
-
-
+# Email Configuration
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 465
@@ -304,23 +337,79 @@ EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = 'ibeawuchichukwugozirim@gmail.com'
 
+# File Upload Settings
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
 
+# Cache Configuration for Chatbot
+# Load REDIS_URL
+REDIS_URL = os.environ.get("REDIS_URL")
 
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': REDIS_URL,
+        'KEY_PREFIX': 'finda_chat',
+        'TIMEOUT': 3600,  # 1 hour
+    }
+}
+
+# Celery Configuration for Background Tasks
+CELERY_BROKER_URL = REDIS_URL
+CELERY_RESULT_BACKEND = REDIS_URL
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
 
 # Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.1/howto/static-files/
-
 STATIC_URL = '/static/'
-STATICFILES_DIRS = [os.path.join(BASE_DIR, 'main/static')]  # Ensure this is correct
-
-# In production, you may need:
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles') 
-
-
-# MEDIA_URL = '/media/'  
-# MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+STATICFILES_DIRS = [os.path.join(BASE_DIR, 'main/static')]
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
 # Default primary key field type
-# https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
-
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ===========================
+#  LOGGING CONFIGURATION
+# ===========================
+
+# Create logs directory if it doesn't exist
+LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+if not os.path.exists(LOGS_DIR):
+    os.makedirs(LOGS_DIR)
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'chatbot_file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(LOGS_DIR, 'chatbot.log'),
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    },
+    'loggers': {
+        'chatbot': {
+            'handlers': ['chatbot_file', 'console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+    },
+}
