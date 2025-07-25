@@ -1,174 +1,117 @@
 # chatbot/urls.py - Enhanced URL Configuration
 from django.urls import path, include
-from .views import (
-    # Enhanced Chat APIs
-    EnhancedChatAPI,
-    chat_api,  # Legacy support
-    
-    # Multimedia Processing
-    process_voice_message,
-    analyze_product_image_api,
-    
-    # Chat Management
-    get_chat_history,
-    chat_sessions_api,
-    clear_chat_session,
-    
-    # User Preferences
-    # UserPreferencesAPI,
-    update_user_preferences,
-    get_user_preferences,
-    
-    # Feedback and Analytics
-    ChatFeedbackAPI,
-    chat_analytics_api,
-    user_chat_stats,
-    
-    # Advanced Features
-    search_with_preferences_api,
-    get_conversation_context,
-    update_conversation_context,
-    
-    # System and Health
-    chatbot_health_check,
-    gemini_status_api,
-    
-    # Authentication
-    CustomAuthToken,
-    
-    # Additional endpoints
-    bulk_message_operations,
-    rate_message,
-    session_statistics,
-    export_user_data,
-    process_voice_webhook,
-    image_analysis_webhook,
-)
-
+from . import views
+from .views import *
 app_name = 'chatbot'
 
 urlpatterns = [
-    # ===========================
-    #  CORE CHAT ENDPOINTS
-    # ===========================
+    # =======================
+    # ENHANCED DYNAMIC APIs 
+    # =======================
     
-    # Main chat API (enhanced)
-    path('chat/', EnhancedChatAPI.as_view(), name='enhanced-chat'),
+    # Main chat endpoint - handles all message types dynamically
+    path('chat/', FullyDynamicChatAPI.as_view(), name='dynamic_chat'),
     
-    # Legacy chat API (backward compatibility)
-    path('api/', chat_api, name='legacy-chat-api'),
+    # External search with full context awareness
+    path('external-search/', IntelligentExternalSearchAPI.as_view(), name='intelligent_external_search'),
     
-    # ===========================
-    #  MULTIMEDIA PROCESSING
-    # ===========================
+    # Context-aware feedback system
+    path('feedback/', ContextAwareFeedbackAPI.as_view(), name='context_feedback'),
+    path('feedback/<int:message_id>/', ContextAwareFeedbackAPI.as_view(), name='message_feedback'),
+    
+    # Conversation analytics and insights
+    path('analytics/', ConversationAnalyticsAPI.as_view(), name='conversation_analytics'),
+    
+    # Intelligent preferences management
+    path('preferences/', IntelligentPreferencesAPI.as_view(), name='intelligent_preferences'),
+    
+    # =======================
+    # CONVERSATION MANAGEMENT
+    # =======================
+    
+    # Session management
+    path('sessions/', views.chat_sessions_api, name='chat_sessions'),
+    path('sessions/<uuid:session_id>/clear/', views.clear_chat_session, name='clear_session'),
+    path('sessions/<uuid:session_id>/reset-context/', reset_conversation_context, name='reset_context'),
+    path('sessions/<uuid:session_id>/history/', views.get_chat_history, name='session_history'),
+    path('sessions/<uuid:session_id>/statistics/', views.session_statistics, name='session_stats'),
+    path('sessions/<uuid:session_id>/context/', views.get_conversation_context, name='get_context'),
+    path('sessions/<uuid:session_id>/context/update/', views.update_conversation_context, name='update_context'),
+    
+    # =======================
+    # MULTIMEDIA PROCESSING
+    # =======================
     
     # Voice message processing
-    path('voice/', process_voice_message, name='process-voice'),
+    path('voice/process/', views.process_voice_message, name='process_voice'),
     
     # Image analysis
-    path('image-analysis/', analyze_product_image_api, name='analyze-image'),
+    path('image/analyze/', views.analyze_product_image_api, name='analyze_image'),
     
-    # ===========================
-    #  CHAT SESSION MANAGEMENT
-    # ===========================
+    # =======================
+    # USER INTERACTION APIs
+    # =======================
     
-    # Chat sessions CRUD
-    path('sessions/', chat_sessions_api, name='chat-sessions'),
+    # Message rating and feedback
+    path('messages/<int:message_id>/rate/', views.rate_message, name='rate_message'),
+    path('messages/history/', views.get_chat_history, name='chat_history'),
     
-    # Get chat history
-    path('history/', get_chat_history, name='chat-history'),
-    path('history/<uuid:session_id>/', get_chat_history, name='chat-history-session'),
+    # User preferences (legacy support)
+    path('user/preferences/', views.get_user_preferences, name='get_preferences'),
+    path('user/preferences/update/', views.update_user_preferences, name='update_preferences'),
     
-    # Clear/delete chat session
-    path('sessions/<uuid:session_id>/clear/', clear_chat_session, name='clear-session'),
+    # User statistics
+    path('user/stats/', views.user_chat_stats, name='user_stats'),
+    path('user/export/', views.export_user_data, name='export_data'),
     
-    # Session statistics
-    path('sessions/<uuid:session_id>/stats/', session_statistics, name='session-stats'),
+    # =======================
+    # SEARCH AND DISCOVERY
+    # =======================
     
-    # ===========================
-    #  USER PREFERENCES
-    # ===========================
+    # Advanced search with preferences
+    path('search/advanced/', views.search_with_preferences_api, name='advanced_search'),
     
-    # User preferences management
-    # path('preferences/', UserPreferencesAPI.as_view(), name='user-preferences'),
+    # =======================
+    # SYSTEM HEALTH & MONITORING
+    # =======================
     
-    # Specific preference operations
-    path('preferences/update/', update_user_preferences, name='update-preferences'),
-    path('preferences/get/', get_user_preferences, name='get-preferences'),
+    # Health checks
+    path('health/', views.chatbot_health_check, name='health_check'),
+    path('health/conversation/', conversation_health_check, name='conversation_health'),
+    path('health/gemini/', views.gemini_status_api, name='gemini_status'),
     
-    # ===========================
-    #  FEEDBACK AND ANALYTICS
-    # ===========================
+    # =======================
+    # WEBHOOK ENDPOINTS
+    # =======================
     
-    # Chat feedback
-    path('feedback/', ChatFeedbackAPI.as_view(), name='chat-feedback'),
-    path('messages/<int:message_id>/feedback/', ChatFeedbackAPI.as_view(), name='message-feedback'),
+    # External service webhooks
+    path('webhooks/voice/', views.process_voice_webhook, name='voice_webhook'),
+    path('webhooks/image/', views.image_analysis_webhook, name='image_webhook'),
     
-    # Message rating
-    path('messages/<int:message_id>/rate/', rate_message, name='rate-message'),
+    # =======================
+    # LEGACY SUPPORT
+    # =======================
     
-    # Analytics endpoints
-    path('analytics/', chat_analytics_api, name='chat-analytics'),
-    path('analytics/user/', user_chat_stats, name='user-chat-stats'),
+    # Maintain backward compatibility
+    path('api/chat/', views.chat_api, name='legacy_chat'),  # Redirects to enhanced API
+    path('api/preferences/', views.UserPreferencesAPI.as_view(), name='legacy_preferences'),
+    path('api/feedback/', views.ChatFeedbackAPI.as_view(), name='legacy_feedback'),
     
-    # ===========================
-    #  ADVANCED SEARCH FEATURES
-    # ===========================
+    # =======================
+    # ADMIN & MANAGEMENT
+    # =======================
     
-    # Search with preferences
-    path('search/', search_with_preferences_api, name='search-with-preferences'),
+    # Bulk operations (admin only)
+    path('admin/bulk-operations/', views.bulk_message_operations, name='bulk_operations'),
     
-    # Conversation context management
-    path('context/<uuid:session_id>/', get_conversation_context, name='get-context'),
-    path('context/<uuid:session_id>/update/', update_conversation_context, name='update-context'),
-    
-    # ===========================
-    #  SYSTEM HEALTH & STATUS
-    # ===========================
-    
-    # Health check
-    path('health/', chatbot_health_check, name='health-check'),
-    
-    # Gemini API status
-    path('gemini-status/', gemini_status_api, name='gemini-status'),
-    
-    # ===========================
-    #  AUTHENTICATION
-    # ===========================
-    
-    # Token authentication
-    path('auth/token/', CustomAuthToken.as_view(), name='api-token-auth'),
-    
-    # ===========================
-    #  WEBHOOK ENDPOINTS
-    # ===========================
-    
-    # External service webhooks (if needed)
-    path('webhooks/voice-processing/', process_voice_webhook, name='voice-webhook'),
-    path('webhooks/image-analysis/', image_analysis_webhook, name='image-webhook'),
-    
-    # ===========================
-    #  ADMIN & UTILITY ENDPOINTS
-    # ===========================
-    
-    # Bulk operations (admin)
-    path('admin/bulk-operations/', bulk_message_operations, name='bulk-operations'),
-    
-    # Data export (GDPR compliance)
-    path('export/', export_user_data, name='export-user-data'),
+    # Authentication
+    path('auth/token/', views.CustomAuthToken.as_view(), name='custom_auth_token'),
 ]
 
-# Additional URL patterns for API versioning
+# API versioning support
 v1_patterns = [
-    path('v1/chat/', EnhancedChatAPI.as_view(), name='v1-chat'),
-    path('v1/voice/', process_voice_message, name='v1-voice'),
-    path('v1/image/', analyze_product_image_api, name='v1-image'),
-    path('v1/sessions/', chat_sessions_api, name='v1-sessions'),
-    # path('v1/preferences/', UserPreferencesAPI.as_view(), name='v1-preferences'),
-    path('v1/feedback/', ChatFeedbackAPI.as_view(), name='v1-feedback'),
-    path('v1/analytics/', chat_analytics_api, name='v1-analytics'),
-    path('v1/search/', search_with_preferences_api, name='v1-search'),
+    path('v1/', include(urlpatterns)),
 ]
 
-# Add versioned URLs
-urlpatterns += v1_patterns
+# Complete URL patterns with versioning
+urlpatterns = urlpatterns + v1_patterns
