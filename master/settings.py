@@ -15,7 +15,6 @@ from decouple import config
 import dj_database_url
 from dotenv import load_dotenv
 load_dotenv()
-
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -228,23 +227,13 @@ WSGI_APPLICATION = 'master.wsgi.application'
 
 CLOUDINARY_URL = config('CLOUDINARY_URL')
 
-# postgress db
 DATABASES = {
-    'default': dj_database_url.config(
-        default=config('DATABASE_URL'),
-        conn_max_age=600,
-        ssl_require=True
+
+    # Supabase db
+    'default': dj_database_url.parse(
+        'postgresql://postgres.brvnfupexhjytdxiubjj:Ibeawuchi@242@aws-0-eu-north-1.pooler.supabase.com:6543/postgres'
     ),
 }
-
-
-# default django sqlite db
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.sqlite3',
-#         'NAME': BASE_DIR / 'db.sqlite3',
-#     },
-# }
 
 
 
