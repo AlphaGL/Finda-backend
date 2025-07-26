@@ -82,81 +82,16 @@ SITE_ID = 1
 # Google AI (Gemini) Configuration
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', config('GOOGLE_API_KEY', default=''))
 
-# Chatbot System Prompt
+# Chatbot System Prompt (Updated to be simpler and consistent with your logic)
 CHAT_SYSTEM_PROMPT = """
-You are Finda AI, the intelligent shopping assistant for Finda Marketplace - Africa's premier e-commerce platform.
-
-Your primary role is to help users find products and services on Finda first, then suggest external alternatives if needed.
-
-Core Capabilities:
-1. 🛍️ Product Search: Help users find specific products with detailed filtering
-2. 🔧 Service Search: Connect users with service providers and professionals  
-3. 🖼️ Visual Search: Analyze product images to identify and find similar items
-4. 🎤 Voice Search: Process voice queries naturally
-5. 🌍 Location-aware: Provide region-specific results and recommendations
-6. 💡 Smart Suggestions: Offer alternatives and related products/services
-
-Always prioritize Finda's internal database before suggesting external sources.
-Be friendly, helpful, and use appropriate emojis to make interactions engaging.
+You are the Finda shopping assistant. 
+Greet the user: 'Hello, welcome to Finda! What can we help you find today?' 
+When the user asks for a product or service, first search Finda's database. 
+If matches exist, list the top 3 by rating and then ask: 
+'Would you also like suggestions from external stores (Amazon, Jumia, etc.)?' 
+If no matches, intelligently suggest alternatives using external sources. 
+You can also help with voice messages and image searches to find products.
 """
-
-# Voice Processing Settings
-VOICE_PROCESSING = {
-    'MAX_FILE_SIZE': 10 * 1024 * 1024,  # 10MB
-    'ALLOWED_FORMATS': ['.mp3', '.wav', '.m4a', '.ogg', '.flac'],
-    'RECOGNITION_ENGINES': ['google'],  # Can add 'whisper', 'azure' later
-    'DEFAULT_LANGUAGE': 'en-US',
-    'SUPPORTED_LANGUAGES': ['en-US', 'en-GB', 'fr-FR', 'es-ES', 'de-DE'],
-}
-
-# Image Processing Settings
-IMAGE_PROCESSING = {
-    'MAX_FILE_SIZE': 5 * 1024 * 1024,  # 5MB
-    'MAX_DIMENSIONS': (4000, 4000),
-    'OPTIMIZATION_SIZE': (800, 600),
-    'ALLOWED_FORMATS': ['.jpg', '.jpeg', '.png', '.webp'],
-    'ANALYSIS_ENGINES': ['gemini'],  # Can add 'gpt4v', 'azure' later
-}
-
-# Chatbot Behavior Settings
-CHATBOT_SETTINGS = {
-    'MAX_CONTEXT_MESSAGES': 10,
-    'SESSION_TIMEOUT_HOURS': 24,
-    'MAX_SEARCH_RESULTS': 5,
-    'EXTERNAL_SEARCH_DELAY': 2,  # seconds
-    'RESPONSE_TIMEOUT': 30,  # seconds
-    'MAX_RESPONSE_LENGTH': 2000,
-    'ENABLE_ANALYTICS': True,
-    'ENABLE_FEEDBACK': True,
-}
-
-# External Source Configuration
-EXTERNAL_SOURCES = {
-    'JUMIA': {
-        'name': 'Jumia',
-        'base_url': 'https://www.jumia.com.ng',
-        'enabled': True,
-        'priority': 1
-    },
-    'KONGA': {
-        'name': 'Konga',
-        'base_url': 'https://www.konga.com',
-        'enabled': True,
-        'priority': 2
-    },
-    'AMAZON': {
-        'name': 'Amazon',
-        'base_url': 'https://www.amazon.com',
-        'enabled': True,
-        'priority': 3
-    },
-    'ALIEXPRESS': {
-        'name': 'AliExpress',
-        'base_url': 'https://www.aliexpress.com',
-        'enabled': True,
-        'priority': 4
-    }
-}
 
 # REST Framework Configuration
 REST_FRAMEWORK = {
@@ -286,7 +221,7 @@ WSGI_APPLICATION = 'master.wsgi.application'
 DATABASES = {
     # Supabase db
     'default': dj_database_url.parse(
-        'postgresql://postgres.brvnfupexhjytdxiubjj:Ibeawuchi@242@aws-0-eu-north-1.pooler.supabase.com:6543/postgres'
+        'postgresql://postgres.jeoqgwhwkkqpzpobkeny:finda_db@aws-0-eu-north-1.pooler.supabase.com:6543/postgres'
     ),
 }
 
@@ -337,9 +272,10 @@ EMAIL_HOST_USER = config('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = config('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = 'ibeawuchichukwugozirim@gmail.com'
 
-# File Upload Settings
-FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
-DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB
+# File Upload Settings for Multimedia Features
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB for voice files
+DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10MB for images
+IMAGE_MAX_SIZE = 5 * 1024 * 1024  # 5MB max for images specifically
 
 # Cache Configuration for Chatbot
 # Load REDIS_URL
