@@ -14,6 +14,7 @@ from pathlib import Path
 from decouple import config
 import dj_database_url
 from dotenv import load_dotenv
+from corsheaders.defaults import default_headers
 load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -165,6 +166,8 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
 ]
 
+CSRF_COOKIE_SAMESITE = 'None'
+CSRF_COOKIE_SECURE = True
 # CORS Settings
 CSRF_TRUSTED_ORIGINS = [
     "https://finda-api-chatbot.vercel.app",
@@ -174,14 +177,18 @@ CORS_ALLOW_ALL_ORIGINS = True
 
 # For production (specify your React app's domain)
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",  # React dev server
-    "http://127.0.0.1:3000",
+    "http://localhost:5173",  # React dev server
+    "http://127.0.0.1:8000",
     "https://your-react-app.com",  # Production React app
     "https://finda-api-chatbot.vercel.app",
     "https://findamarketplace.com",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "authorization",
+    "x-csrftoken",
+]
 
 # Provider specific settings
 SOCIALACCOUNT_PROVIDERS = {
