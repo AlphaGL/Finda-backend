@@ -1,4 +1,4 @@
-# views.py - Enhanced with image and voice endpoints
+# views.py - FIXED: Database-first chatbot with proper priority system
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
@@ -8,7 +8,6 @@ from rest_framework.views import APIView
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import get_user_model
-from django.core.files.storage import default_storage
 
 from .gemini_client import (
     send_to_gemini, analyze_image_with_gemini, 
@@ -16,120 +15,69 @@ from .gemini_client import (
 )
 from .models import ChatMessage, UserVoiceSettings
 from .serializers import ChatMessageSerializer, VoiceSettingsSerializer
-from .utils import find_exact_matches, search_products_by_analysis
+from .utils import (
+    search_finda_database, format_finda_results, generate_no_results_response,
+    search_by_category, get_trending_items, format_categories_response,
+    search_products_by_analysis
+)
 from main.models import Products, Services, Category
 
 User = get_user_model()
 
-# — SYSTEM PROMPT (used on first message only) —
+# ENHANCED SYSTEM PROMPT - Database-first priority
 SYSTEM_PROMPT = (
-    "You are the Finda shopping assistant. "
-    "Greet the user: 'Hello, welcome to Finda! What can we help you find today?' "
-    "When the user asks for a product or service, first search Finda's database. "
-    "If matches exist, list the top 3 by rating and then ask: "
-    "'Would you also like suggestions from external stores (Amazon, Jumia, etc.)?' "
-    "If no matches, intelligently suggest alternatives using external sources. "
-    "You can also help with voice messages and image searches to find products."
+    "You are Finda's intelligent shopping assistant. Your PRIMARY mission is to help users "
+    "discover and buy products and services from Finda's marketplace.\n\n"
+    "CORE PRINCIPLES:\n"
+    "1. ALWAYS search Finda's database FIRST before any external suggestions\n"
+    "2. Promote Finda products and services as the main solution\n"
+    "3. Present external suggestions only as 'bonus options' when asked\n"  
+    "4. Remember: Users came to Finda to buy from LOCAL sellers, not competitors\n"
+    "5. Make Finda feel like the best choice, not just another option\n\n"
+    "CONVERSATION FLOW:\n"
+    "- Search Finda database for any product/service requests\n"
+    "- Present Finda results with enthusiasm and detail\n"
+    "- Only mention external stores as secondary options\n"
+    "- Focus on benefits of buying local (faster delivery, better support)\n\n"
+    "Always be enthusiastic about Finda's marketplace!"
 )
 
-# Intent dictionaries (keeping your existing ones)
+# Intent recognition patterns
 GREETINGS = {
-    "hi", "hello", "hey", "hiya", "yo", "howdy", "sup", "what's up", "hey there", "g'day", "how's it going",
-    "good morning", "good afternoon", "good evening", "evening", "morning", "good day",
-    "bonjour", "salut", "bonsoir", "hola", "buenos días", "buenas tardes", "buenas noches",
-    "guten tag", "guten morgen", "guten abend", "ciao", "buongiorno", "buonasera",
-    "olá", "bom dia", "boa tarde", "boa noite", "hallo", "goede dag", "goedemorgen",
-    "goedenavond", "привет", "здравствуйте", "доброе утро", "добрый день", "добрый вечер",
-    "مرحبا", "اهلا", "السلام عليكم", "صباح الخير", "مساء الخير",
-    "你好", "您好", "早上好", "下午好", "晚上好", "こんにちは", "おはよう", "おはようございます", "こんばんは",
-    "안녕하세요", "안녕", "좋은 아침", "좋은 저녁", "नमस्ते", "नमस्कार", "सुप्रभात", "शुभ संध्या",
-    "ẹ n lẹ", "bawo ni", "kaaro", "kaasan", "kaale", "ndewo", "ututu oma", "ehihie oma", "mgbede oma",
-    "sannu", "ina kwana", "ina wuni", "barka da safiya", "barka da rana", "barka da yamma",
-    "habari", "hujambo", "salama", "shikamoo", "asubuhi njema", "jioni njema"
+    "hi", "hello", "hey", "hiya", "yo", "howdy", "sup", "what's up", "hey there", 
+    "good morning", "good afternoon", "good evening", "morning", "evening",
+    "habari", "sannu", "bawo", "ẹ n lẹ", "ndewo"
 }
 
 THANKS = {
-    "thanks", "thank you", "thanks a lot", "thank you so much", "thanks so much",
-    "many thanks", "much appreciated", "cheers", "thanks a ton", "thank you kindly",
-    "thx", "ty", "tysm", "tnx", "tq", "appreciate it", "thank u", "big thanks", "thanx", "tanks",
-    "merci", "merci beaucoup", "grand merci", "gracias", "muchas gracias", "mil gracias",
-    "danke", "vielen dank", "danke schön", "tausend dank", "grazie", "mille grazie", "grazie mille",
-    "obrigado", "obrigada", "muito obrigado", "muito obrigada", "dank je", "dank je wel", "bedankt",
-    "hartelijk dank", "спасибо", "большое спасибо", "спасибки", "شكرا", "شكراً جزيلاً", "ألف شكر",
-    "谢谢", "谢谢你", "多谢", "非常感谢", "ありがとう", "ありがとうございます", "どうもありがとう",
-    "감사합니다", "고맙습니다", "고마워", "감사해요", "धन्यवाद", "शुक्रिया", "बहुत धन्यवाद",
-    "ẹ se", "ẹ ṣé púpọ̀", "o se", "o seun", "daalụ", "imeela", "ekele diri gị",
-    "na gode", "nagode sosai", "asante", "asante sana", "nashukuru", "ahsante"
+    "thanks", "thank you", "thanks a lot", "thank you so much", "much appreciated",
+    "thx", "ty", "tysm", "appreciate it", "ẹ se", "na gode", "asante"
 }
 
 POSITIVE_CONFIRMATIONS = {
-    "yes", "yeah", "yep", "yup", "yah", "ya", "sure", "sure thing", "absolutely", "definitely",
-    "for sure", "of course", "okay", "ok", "okey", "okey dokey", "alright", "roger that",
-    "affirmative", "you got it", "sounds good", "why not", "go ahead", "let's do it",
-    "let's go", "please do", "yess", "yesss", "yea", "yuh", "bet", "ight", "100%", "on god",
-    "aye", "hell yes", "hell yeah", "fo sho", "for real", "no doubt", "yup please",
-    "yes please", "that would be great", "yes do", "yes sure", "yes it is", "yes i do",
-    "do it", "do that", "go on", "i want that", "yes go ahead", "yes why not",
-    "y", "yaas", "yaaas", "yaaaas", "yaa", "u bet", "u got it", "okie", "okies", "okok",
-    "oui", "bien sûr", "absolument", "d'accord", "ouais", "c'est bon", "okey",
-    "sí", "claro", "por supuesto", "vale", "cierto", "desde luego",
-    "ja", "natürlich", "klar", "sicher", "auf jeden fall", "sì", "certamente", "ovviamente",
-    "va bene", "d'accordo", "sim", "claro", "com certeza", "pois não", "certo",
-    "ja", "zeker", "natuurlijk", "oké", "tuurlijk", "да", "конечно", "безусловно", "ага",
-    "نعم", "أكيد", "طبعا", "تمام", "أجل", "ايوا", "是", "对", "好的", "没问题", "行", "当然",
-    "はい", "ええ", "そうです", "もちろん", "了解です", "네", "예", "그럼요", "물론이죠", "좋아요",
-    "हाँ", "जी हाँ", "बिलकुल", "हां", "bẹẹni", "bẹ́ẹ̀ ni", "ó dáa", "ko si wahala",
-    "ee", "eh", "ọ dị mma", "ọ dị", "n'ezie", "eh", "e", "tabbas", "toh", "eh na'am",
-    "ndiyo", "bila shaka", "sawa", "ndio", "hakika"
+    "yes", "yeah", "yep", "yup", "sure", "absolutely", "definitely", "okay", "ok",
+    "alright", "go ahead", "let's do it", "why not", "sounds good", "yes please",
+    "do it", "i want that", "show me", "y"
 }
 
 NEGATIVE_CONFIRMATIONS = {
-    "no", "nope", "nah", "na", "not really", "not now", "maybe later", "not interested",
-    "no thanks", "no thank you", "i'm good", "i'll pass", "not today", "no need",
-    "don't bother", "don't worry about it", "pass", "hard pass", "no way", "absolutely not",
-    "not at all", "not anymore", "not now thanks", "please no", "not for now",
-    "nope not now", "never", "i'm fine", "i'm okay", "no i don't", "i don't want",
-    "i don't need", "nah i'm good", "i'm okay thanks", "im good fam", "i'm good fr",
-    "leave it", "forget it", "cancel", "i'm done", "that's all", "that's enough",
-    "not necessary", "maybe next time", "n", "nuh uh", "no ty", "no tnx", "nope lol", "nah fam",
-    "non", "pas maintenant", "non merci", "jamais", "aucune envie", "no", "nunca", "no gracias",
-    "tal vez después", "ahora no", "nein", "nicht jetzt", "kein interesse", "ne danke",
-    "auf keinen fall", "no", "non ora", "no grazie", "mai", "non adesso",
-    "não", "não agora", "sem interesse", "não obrigado", "talvez depois",
-    "nee", "niet nu", "nee dank je", "geen interesse", "нет", "не сейчас", "не надо",
-    "никогда", "не хочу", "لا", "مش الآن", "مش مهتم", "لا شكراً", "لا أريد", "مش لازم",
-    "不", "不是", "不用", "不要", "不可以", "不行", "没兴趣", "以后再说",
-    "いいえ", "結構です", "いりません", "今はいい", "結構ですありがとう", "遠慮します",
-    "아니요", "괜찮아요", "필요없어요", "지금은 아니에요", "사양할게요",
-    "नहीं", "अभी नहीं", "धन्यवाद नहीं", "कोई ज़रूरत नहीं", "नहीं چाहیے",
-    "rara", "rara o", "mi o fe", "ko ye mi", "ma fi sile", "ko to ye",
-    "mba", "mba o", "a gaghi", "enweghị m mmasị", "hapụ ya", "i kwughị",
-    "a'a", "ba yanzu ba", "bana so", "babu bukata", "a'a nagode",
-    "hapana", "sio sasa", "sitaki", "hapana asante", "hapana shukrani"
+    "no", "nope", "nah", "not really", "not now", "maybe later", "not interested",
+    "no thanks", "i'm good", "i'll pass", "not today", "skip", "cancel", "n"
 }
 
 BROWSE_PATTERNS = {
-    "what do you have", "what you got", "what can i find", "show me what you have",
-    "show me", "show products", "browse", "let me browse", "explore", "i want to explore",
-    "browse your catalog", "see items", "see services", "see products", "what's available",
-    "available items", "what are you offering", "check what you offer", "what are your offers",
-    "open catalog", "list categories", "list services", "list products", "list items",
-    "search all", "shop all", "shop now", "start shopping", "start browsing",
-    "can i browse", "i want to see what's here", "display all", "view categories",
-    "display your categories", "i want to check things out", "let me shop", "can i shop",
-    "product categories", "services available", "explore items", "explore services",
-    "let's explore", "let's shop", "i want to look around", "i want to window shop",
-    "view catalog", "see your catalog", "check what you have", "go to marketplace"
+    "categories", "browse", "explore", "what do you have", "show me", "catalog",
+    "what's available", "list products", "list services", "shop", "marketplace"
 }
 
+EXTERNAL_REQUEST_PATTERNS = {
+    "external", "amazon", "jumia", "konga", "other stores", "outside", "international"
+}
 
 class CustomAuthToken(APIView):
     permission_classes = [AllowAny]
-    """
-    POST /api-token-auth/
-    Accepts email + password and returns token
-    """
-    def post(self, request, *args, **kwargs):
+    
+    def post(self, request, *args, kwargs):
         email = request.data.get('email')
         password = request.data.get('password')
 
@@ -137,7 +85,6 @@ class CustomAuthToken(APIView):
             return Response({"error": "Email and password are required"}, status=400)
 
         user = authenticate(request, email=email, password=password)
-
         if not user:
             return Response({"error": "Invalid credentials"}, status=401)
 
@@ -154,99 +101,169 @@ class CustomAuthToken(APIView):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def chat_api(request):
-    """Original chat API - keeping your exact logic"""
+    """
+    FIXED: Database-first chatbot with proper conversation flow
+    """
     user = request.user
     raw_message = request.data.get('message', '').strip()
+    
     if not raw_message:
         return Response({"detail": "Please send a non-empty message."}, status=400)
-    lower = raw_message.lower()
-
-    # 1) Chat history - EXACT same logic
-    recent = ChatMessage.objects.filter(user=user).order_by('-timestamp')[:10]
+    
+    lower_message = raw_message.lower()
+    
+    # Build conversation history for context
+    recent_messages = ChatMessage.objects.filter(user=user).order_by('-timestamp')[:10]
     history = []
-    for msg in reversed(recent):
+    for msg in reversed(recent_messages):
         history.append({'author': 'user', 'content': msg.user_input})
         history.append({'author': 'assistant', 'content': msg.bot_response})
-
-    # 2) Add system prompt if new user - EXACT same logic
-    if not recent.exists():
-        history.insert(0, {'author': 'system', 'content': SYSTEM_PROMPT})
-
-    try:
-        # 3) Intent: Greeting - EXACT same logic
-        if lower in GREETINGS:
-            bot_text = "Hello, welcome to Finda! What can we help you find today?"
-
-        # 4) Intent: Thank-you - EXACT same logic
-        elif any(word in lower for word in THANKS):
-            bot_text = "You're welcome! Let me know if you'd like to find anything else."
-
-        # 5) Intent: Browse categories - EXACT same logic
-        elif any(pat in lower for pat in BROWSE_PATTERNS):
-            categories = [display for key, display in Category.CATEGORY_CHOICES if key != 'all']
-            bot_text = (
-                "Sure! Here are some categories you can explore:\n" +
-                "\n".join(f"- {cat}" for cat in categories) +
-                "\n\nOr just type in what you're looking for (e.g., 'Nike shoes', 'barber services').\n"
-                "💡 Tip: You can also send me a photo of an item or record a voice message!"
-            )
-
-        else:
-            # 6-11) All your existing logic remains exactly the same
-            last_bot_msg = history[-1]['content'].lower() if history and history[-1]['author'] == 'assistant' else ""
-            asked_external = "external stores" in last_bot_msg
-
-            if asked_external and any(word in lower for word in POSITIVE_CONFIRMATIONS):
-                bot_text = send_to_gemini(history, raw_message)
-
-            elif asked_external and any(word in lower for word in NEGATIVE_CONFIRMATIONS):
-                raise ValueError("Restarting DB search...")
-
-            else:
-                # Your exact database search logic
-                prod_qs = Products.objects.filter(
-                    Q(product_name__icontains=raw_message) |
-                    Q(product_description__icontains=raw_message) |
-                    Q(product_brand__icontains=raw_message),
-                    product_status='published'
-                )
-                serv_qs = Services.objects.filter(
-                    Q(service_name__icontains=raw_message) |
-                    Q(service_description__icontains=raw_message),
-                    service_status='published'
-                )
-
-                matches = list(prod_qs) + list(serv_qs)
-                matches.sort(key=lambda obj: obj.average_rating(), reverse=True)
-
-                if matches:
-                    top3 = matches[:3]
-                    response_lines = ["I found these on Finda:"]
-                    for obj in top3:
-                        url = getattr(obj, 'get_absolute_url', lambda: f'/products/{obj.pk}/')()
-                        price = getattr(obj, 'product_price', getattr(obj, 'service_price', 'N/A'))
-                        response_lines.append(f"- {obj} — ₦{price}\n  Link: https://yourdomain.com{url}")
-                    response_lines.append(
-                        "\nWould you also like suggestions from external stores (e.g., Amazon, Jumia)?"
-                    )
-                    bot_text = "\n".join(response_lines)
-                else:
-                    bot_text = send_to_gemini(history, raw_message)
-    except Exception:
-        bot_text = send_to_gemini(history, raw_message)
     
-    # 12) Save conversation - EXACT same logic
+    # Add system prompt for new users
+    if not recent_messages.exists():
+        history.insert(0, {'author': 'system', 'content': SYSTEM_PROMPT})
+    
+    try:
+        # ===========================================
+        # CONVERSATION FLOW - DATABASE FIRST ALWAYS
+        # ===========================================
+        
+        # 1. GREETINGS - Welcome to Finda
+        if any(greeting in lower_message for greeting in GREETINGS):
+            if recent_messages.exists():
+                bot_text = (
+                    "Welcome back to Finda! 😊\n\n"
+                    "Ready to discover more amazing deals from our local marketplace?\n"
+                    "What are you looking for today?"
+                )
+            else:
+                bot_text = (
+                    "🛍️ Welcome to Finda! I'm your personal shopping assistant.\n\n"
+                    "I'm here to help you discover amazing products and services from trusted local sellers. "
+                    "What can I help you find today?\n\n"
+                    "💡 You can:\n"
+                    "• Search for specific items (e.g., 'iPhone 13', 'plumbing services')\n"
+                    "• Browse categories (just say 'categories')\n"
+                    "• Send me photos of items you want\n"
+                    "• Use voice messages to search\n\n"
+                    "Let's start shopping! What do you need?"
+                )
+        
+        # 2. THANK YOU responses
+        elif any(thanks in lower_message for thanks in THANKS):
+            bot_text = (
+                "You're very welcome! 😊\n\n"
+                "I'm always here to help you find amazing deals on Finda. "
+                "Feel free to search for anything else from our local marketplace!"
+            )
+        
+        # 3. BROWSE CATEGORIES request
+        elif any(pattern in lower_message for pattern in BROWSE_PATTERNS):
+            bot_text = format_categories_response()
+        
+        # 4. Check if user is responding to EXTERNAL STORE suggestion
+        elif recent_messages.exists():
+            last_bot_response = recent_messages.first().bot_response.lower()
+            asked_about_external = ("external stores" in last_bot_response or 
+                                  "amazon" in last_bot_response or 
+                                  "jumia" in last_bot_response or
+                                  "bonus alternatives" in last_bot_response)
+            
+            # User wants external suggestions
+            if asked_about_external and any(conf in lower_message for conf in POSITIVE_CONFIRMATIONS):
+                external_prompt = (
+                    f"The user searched for products on Finda and now wants external store suggestions "
+                    f"as bonus options. Their original query was related to: '{raw_message}'. "
+                    f"Provide helpful suggestions from reputable online stores that deliver to Nigeria "
+                    f"like Amazon, Jumia, Konga, etc. Include approximate prices in Naira (₦) and "
+                    f"mention shipping considerations. Keep it brief and remind them that Finda "  
+                    f"offers local support and faster delivery."
+                )
+                bot_text = send_to_gemini(history, external_prompt)
+            
+            # User doesn't want external suggestions
+            elif asked_about_external and any(conf in lower_message for conf in NEGATIVE_CONFIRMATIONS):
+                bot_text = (
+                    "Perfect choice! Stick with Finda for the best local shopping experience! 🛍️\n\n"
+                    "✅ Smart decision because:\n"
+                    "• 🚚 Faster local delivery\n"
+                    "• 💬 Direct chat with sellers\n" 
+                    "• 🏠 Support Nigerian businesses\n"
+                    "• 💯 No international shipping hassles\n\n"
+                    "What else can I help you find on Finda today?"
+                )
+            
+            # Regular search - DATABASE FIRST!
+            else:
+                bot_text = handle_search_request(raw_message, lower_message)
+        
+        # 5. MAIN SEARCH LOGIC - Always search DATABASE FIRST
+        else:
+            bot_text = handle_search_request(raw_message, lower_message)
+    
+    except Exception as e:
+        print(f"❌ Chat API Error: {str(e)}")
+        bot_text = (
+            "I'm having a small technical hiccup right now. 🔧\n\n"
+            "Could you please try your search again? I'm here to help you "
+            "find amazing products and services on Finda!"
+        )
+    
+    # Save conversation to database
     ChatMessage.objects.create(
         user=user,
         user_input=raw_message,
         bot_response=bot_text
     )
+    
     return Response({"reply": bot_text})
 
-@api_view(['POST'])
+def handle_search_request(raw_message, lower_message):
+    """
+    CORE SEARCH LOGIC - Always prioritize Finda database
+    """
+    print(f"🔍 Processing search request: '{raw_message}'")
+    
+    # Check if user specifically asked for external stores
+    explicit_external_request = any(pattern in lower_message for pattern in EXTERNAL_REQUEST_PATTERNS)
+    
+    if explicit_external_request:
+        # User specifically asked for external stores
+        return (
+            f"I understand you want to check external stores for '{raw_message}'.\n\n"
+            f"But first, let me show you what we have on Finda! 🛍️\n\n"
+            f"{search_and_format_finda_results(raw_message)}\n\n"
+            f"Would you still like me to check external stores like Amazon and Jumia as well?"
+        )
+    
+    # NORMAL FLOW: Search Finda database FIRST
+    return search_and_format_finda_results(raw_message)
+
+def search_and_format_finda_results(query):
+    """
+    Search Finda database and format results properly
+    """
+    print(f"🎯 Searching Finda database for: '{query}'")
+    
+    # 1. SEARCH FINDA DATABASE FIRST
+    finda_results = search_finda_database(query, limit=5)
+    
+    if finda_results:
+        # SUCCESS! Found results in YOUR database
+        print(f"✅ Found {len(finda_results)} results in Finda database")
+        return format_finda_results(finda_results, query)
+    
+    else:
+        # No results in YOUR database - offer helpful alternatives
+        print("❌ No results found in Finda database")
+        return generate_no_results_response(query)
+
+@api_view(['POST']) 
 @permission_classes([IsAuthenticated])
 def voice_chat_api(request):
-    """NEW: Handle voice messages"""
+    """
+    Enhanced voice chat with database-first priority
+    """
     if 'audio' not in request.FILES:
         return Response({"error": "No audio file provided"}, status=400)
     
@@ -259,77 +276,46 @@ def voice_chat_api(request):
         
         if not transcript:
             return Response({
-                "error": "Could not understand the audio. Please try speaking more clearly or use text instead."
+                "error": "🎤 I couldn't understand your voice message clearly. Please try speaking more clearly or use text instead.",
+                "transcript": ""
             }, status=400)
+        
+        print(f"🎤 Voice transcribed: '{transcript}'")
         
         # Get user's voice settings
         voice_settings = getattr(user, 'voice_settings', None)
         voice_enabled = voice_settings.voice_enabled if voice_settings else True
         
-        # Process the transcribed text using your existing chat logic
-        # Create a mock request with the transcript
-        chat_request_data = {'message': transcript}
+        # Process transcript using DATABASE-FIRST logic
+        lower_transcript = transcript.lower()
         
-        # Use your existing chat processing logic
-        recent = ChatMessage.objects.filter(user=user).order_by('-timestamp')[:10]
-        history = []
-        for msg in reversed(recent):
-            history.append({'author': 'user', 'content': msg.user_input})
-            history.append({'author': 'assistant', 'content': msg.bot_response})
-
-        # Add system prompt if new user
-        if not recent.exists():
-            history.insert(0, {'author': 'system', 'content': SYSTEM_PROMPT})
-
-        # Process using your existing logic
-        lower = transcript.lower()
-        
-        if lower in GREETINGS:
-            bot_text = "Hello, welcome to Finda! What can we help you find today?"
-        elif any(word in lower for word in THANKS):
-            bot_text = "You're welcome! Let me know if you'd like to find anything else."
-        elif any(pat in lower for pat in BROWSE_PATTERNS):
-            categories = [display for key, display in Category.CATEGORY_CHOICES if key != 'all']
+        # Handle voice-specific responses
+        if any(greeting in lower_transcript for greeting in GREETINGS):
             bot_text = (
-                "Sure! Here are some categories you can explore:\n" +
-                "\n".join(f"- {cat}" for cat in categories) +
-                "\n\nOr just tell me what you're looking for!"
+                "🎤 Hello! I heard you loud and clear! Welcome to Finda!\n\n"
+                "What can I help you find from our amazing local marketplace today?"
             )
+        elif any(thanks in lower_transcript for thanks in THANKS):
+            bot_text = "🎤 You're very welcome! Let me know if you'd like to find anything else on Finda."
+        elif any(pattern in lower_transcript for pattern in BROWSE_PATTERNS):
+            bot_text = format_categories_response()
         else:
-            # Your existing search logic
-            prod_qs = Products.objects.filter(
-                Q(product_name__icontains=transcript) |
-                Q(product_description__icontains=transcript) |
-                Q(product_brand__icontains=transcript),
-                product_status='published'
-            )
-            serv_qs = Services.objects.filter(
-                Q(service_name__icontains=transcript) |
-                Q(service_description__icontains=transcript),
-                service_status='published'
-            )
-
-            matches = list(prod_qs) + list(serv_qs)
-            matches.sort(key=lambda obj: obj.average_rating(), reverse=True)
-
-            if matches:
-                top3 = matches[:3]
-                response_lines = ["I found these on Finda:"]
-                for obj in top3:
-                    url = getattr(obj, 'get_absolute_url', lambda: f'/products/{obj.pk}/')()
-                    price = getattr(obj, 'product_price', getattr(obj, 'service_price', 'N/A'))
-                    response_lines.append(f"- {obj} — ₦{price}")
-                response_lines.append("Would you also like suggestions from external stores?")
-                bot_text = "\n".join(response_lines)
-            else:
-                bot_text = send_to_gemini(history, transcript)
+            # MAIN VOICE SEARCH - Database first!
+            bot_text = f"🎤 Perfect! I heard you asking for '{transcript}'.\n\nLet me search Finda's marketplace for you...\n\n"
+            bot_text += search_and_format_finda_results(transcript)
         
         # Generate voice response if enabled
         voice_response_url = None
-        if voice_enabled:
-            language = voice_settings.preferred_language if voice_settings else 'en'
-            slow_speech = voice_settings.voice_speed < 1.0 if voice_settings else False
-            voice_response_url = generate_voice_response(bot_text, language, slow_speech)
+        if voice_enabled and bot_text:
+            try:
+                language = voice_settings.preferred_language if voice_settings else 'en'
+                slow_speech = voice_settings.voice_speed < 1.0 if voice_settings else False
+                
+                # Clean bot_text for voice (remove markdown and emojis for better TTS)
+                clean_text_for_voice = clean_text_for_tts(bot_text)
+                voice_response_url = generate_voice_response(clean_text_for_voice, language, slow_speech)
+            except Exception as e:
+                print(f"⚠️ Voice generation failed: {e}")
         
         # Save conversation with voice metadata
         chat_message = ChatMessage.objects.create(
@@ -350,12 +336,18 @@ def voice_chat_api(request):
         })
         
     except Exception as e:
-        return Response({"error": f"Voice processing failed: {str(e)}"}, status=500)
+        print(f"❌ Voice processing error: {e}")
+        return Response({
+            "error": f"🎤 Voice processing failed: {str(e)}",
+            "transcript": ""
+        }, status=500)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def image_search_api(request):
-    """NEW: Handle image searches"""
+    """
+    Enhanced image search with database-first priority
+    """
     if 'image' not in request.FILES:
         return Response({"error": "No image provided"}, status=400)
     
@@ -364,26 +356,68 @@ def image_search_api(request):
     user = request.user
     
     try:
+        print(f"📸 Processing image search with query: '{user_query}'")
+        
         # Analyze image with Gemini Vision
         image_analysis = analyze_image_with_gemini(image_file, user_query)
+        print(f"🤖 AI Analysis: {image_analysis[:100]}...")
         
-        # Try to search your database using analysis results
-        products = search_products_by_analysis(image_analysis, limit=3)
+        # SEARCH FINDA DATABASE using analysis results
+        finda_results = search_products_by_analysis(image_analysis, limit=4)
         
-        if products:
-            # Format response similar to your text search
-            response_lines = ["Based on your image, I found these on Finda:"]
-            for obj in products:
-                url = getattr(obj, 'get_absolute_url', lambda: f'/products/{obj.pk}/')()
-                price = getattr(obj, 'product_price', getattr(obj, 'service_price', 'N/A'))
-                response_lines.append(f"- {obj} — ₦{price}\n  Link: https://yourdomain.com{url}")
-            response_lines.append(
-                "\nWould you also like suggestions from external stores based on this image?"
-            )
+        if finda_results:
+            # SUCCESS! Found matching products in YOUR database
+            print(f"✅ Found {len(finda_results)} image matches in Finda database")
+            
+            response_lines = [
+                "📸 Excellent! Based on your image, I found these on Finda:\n"
+            ]
+            
+            for i, obj in enumerate(finda_results, 1):
+                is_product = hasattr(obj, 'product_name')
+                name = obj.product_name if is_product else obj.service_name
+                price = obj.get_formatted_price() if is_product else obj.get_formatted_price_range()
+                location = obj.get_full_location()
+                rating = obj.average_rating()
+                rating_count = obj.rating_count()
+                url = obj.get_absolute_url()
+                
+                # Format rating
+                if rating > 0 and rating_count > 0:
+                    stars = "⭐" * min(int(rating), 5)
+                    rating_text = f"{stars} {rating}/5 ({rating_count} reviews)"
+                else:
+                    rating_text = "⭐ New listing"
+                
+                response_lines.append(
+                    f"{i}. {name}\n"
+                    f"   💰 {price}\n"
+                    f"   📍 {location}\n"
+                    f"   {rating_text}\n"
+                    f"   🔗 [View Details](https://finda.ng{url})\n"
+                )
+            
+            response_lines.extend([
+                "\n✨ These are from verified Finda sellers with great ratings!\n",
+                "💡 Need more options? I can also search external stores like Amazon, Jumia, etc. "
+                "Just say 'yes' if you'd like me to check those too!"
+            ])
+            
             bot_text = "\n".join(response_lines)
+        
         else:
-            # No local matches - use Gemini's analysis as the response
-            bot_text = image_analysis
+            # No matches in YOUR database - use AI analysis but focus on Finda
+            print("❌ No image matches found in Finda database")
+            
+            bot_text = (
+                f"📸 I can see your image! {image_analysis}\n\n"
+                f"I didn't find exact matches on Finda right now, but here's what I can do:\n\n"
+                f"1️⃣ Browse similar categories on Finda\n"
+                f"2️⃣ Set up alerts for when similar items arrive\n"
+                f"3️⃣ Search external stores for similar products\n"
+                f"4️⃣ Try different search terms based on what I see\n\n"
+                f"What would you prefer? Say 'categories' to browse, or 'external' to check other stores!"
+            )
         
         # Save conversation with image metadata
         chat_message = ChatMessage.objects.create(
@@ -398,17 +432,22 @@ def image_search_api(request):
         return Response({
             "image_analysis": image_analysis,
             "reply": bot_text,
-            "local_products_found": len(products),
+            "finda_matches_found": len(finda_results),
             "message_id": chat_message.id
         })
         
     except Exception as e:
-        return Response({"error": f"Image processing failed: {str(e)}"}, status=500)
+        print(f"❌ Image processing error: {e}")
+        return Response({
+            "error": f"📸 Image processing failed: {str(e)}. Please try uploading a clearer image or describe what you're looking for instead."
+        }, status=500)
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def voice_settings_api(request):
-    """NEW: Manage user voice settings"""
+    """
+    Manage user voice settings
+    """
     user = request.user
     
     if request.method == 'GET':
@@ -423,3 +462,31 @@ def voice_settings_api(request):
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
+
+# Helper functions
+def clean_text_for_tts(text):
+    """
+    Clean text for better text-to-speech output
+    """
+    import re
+    
+    if not text:
+        return ""
+    
+    # Remove markdown formatting
+    cleaned = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # Bold
+    cleaned = re.sub(r'\*([^*]+)\*', r'\1', cleaned)    # Italic
+    cleaned = re.sub(r'#{1,6}\s', '', cleaned)          # Headers
+    cleaned = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', cleaned)  # Links
+    
+    # Remove excessive emojis for better speech
+    cleaned = re.sub(r'[🛍️📸🎤✅❌💡🔍⭐💰📍🔗🚚💬🏠💯]', '', cleaned)
+    
+    # Clean up extra whitespace
+    cleaned = ' '.join(cleaned.split())
+    
+    # Limit length for TTS (most TTS services have limits)
+    if len(cleaned) > 500:
+        cleaned = cleaned[:497] + "..."
+    
+    return cleaned
