@@ -284,7 +284,7 @@ class ProductsAdmin(admin.ModelAdmin):
     list_editable = ['product_status', 'is_promoted', 'is_featured']
     prepopulated_fields = {'slug': ('product_name',)}
     readonly_fields = [
-        'slug', 'views_count', 'favorites_count', 'created_at', 
+        'views_count', 'favorites_count', 'created_at', 
         'updated_at', 'published_at'
     ]
     
@@ -372,7 +372,7 @@ class ServicesAdmin(admin.ModelAdmin):
     list_editable = ['service_status', 'is_promoted', 'is_featured', 'is_verified']
     prepopulated_fields = {'slug': ('service_name',)}
     readonly_fields = [
-        'slug', 'views_count', 'contacts_count', 'created_at',
+        'views_count', 'contacts_count', 'created_at',
         'updated_at', 'published_at'
     ]
     
