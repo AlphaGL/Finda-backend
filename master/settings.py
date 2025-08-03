@@ -172,8 +172,8 @@ CSRF_COOKIE_SECURE = True
 CSRF_TRUSTED_ORIGINS = [
     "https://finda-api-chatbot.vercel.app",
     "https://finda-six.vercel.app",
-    "finda-six.vercel.app",
-    "www.finda-six.vercel.app",
+    "https://www.finda-six.vercel.app",
+
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -183,9 +183,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",  # React dev server
     "http://127.0.0.1:8000",
     "https://finda-six.vercel.app",
-    "finda-six.vercel.app",
-    "www.finda-six.vercel.app",
-    "https://finda-api-chatbot.vercel.app",
+    "https://finda-six.vercel.app",
+    "https://www.finda-api-chatbot.vercel.app",
 ]
 
 CORS_ALLOW_CREDENTIALS = True
