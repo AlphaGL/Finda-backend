@@ -12,3 +12,11 @@ urlpatterns = [
     path('api/image/', image_search_api, name='image-search-api'),
     path('api/voice-settings/', voice_settings_api, name='voice-settings-api'),
 ]
+
+
+# 📊 New Endpoints Added
+
+# GET /api/chat/history/ - Get chat history with pagination
+# DELETE /api/chat/clear/ - Clear chat history and context
+# POST /api/chat/feedback/ - Submit user feedback
+# GET /api/health/ - System health check
