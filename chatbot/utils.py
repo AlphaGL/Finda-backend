@@ -134,7 +134,7 @@ def search_finda_database(query, limit=5):
     if not clean_query:
         return []
     
-    print(f"🔍 Searching Finda database for: '{clean_query}'")
+    print(f"🔍 Searching our platform for: '{clean_query}'")
     
     # Get all published products and services
     products = Products.objects.filter(product_status='published').select_related('category', 'country', 'state', 'city')
@@ -161,7 +161,7 @@ def search_finda_database(query, limit=5):
     # Extract items and limit results
     results = [item[0] for item in scored_results[:limit]]
     
-    print(f"✅ Found {len(results)} relevant matches in Finda database")
+    print(f"✅ Found {len(results)} relevant matches from our platform")
     if results:
         for i, result in enumerate(results[:3]):
             name = result.product_name if hasattr(result, 'product_name') else result.service_name
@@ -181,7 +181,7 @@ def format_finda_results(results, query="", limit=3):
     response_lines = []
     
     # Enthusiastic header
-    response_lines.append("🛍️ Excellent! I found these amazing options on Finda for you:\n")
+    response_lines.append("🛍️ Excellent! I found these amazing options on our platform for you:\n")
     
     for i, obj in enumerate(top_results, 1):
         # Determine type and extract info
@@ -221,21 +221,21 @@ def format_finda_results(results, query="", limit=3):
             f"   💰 Price: {price_formatted}\n"
             f"   📍 Location: {location}\n"
             f"   {rating_text}\n"
-            f"   🔗 [View Details & Contact Seller](https://finda.ng{url})\n"
+            f"   🔗 [View Details & Contact Seller](https://finda-six.vercel.app{url})\n"
         )
     
     # Add total results count
     total_count = len(results)
     if total_count > limit:
-        response_lines.append(f"*📊 Plus {total_count - limit} more options available on Finda!*\n")
+        response_lines.append(f"📊 Plus {total_count - limit} more options available on our platform!\n")
     
     # Promote Finda benefits
     response_lines.append(
-        "✨ Why choose Finda sellers?\n"
-        "• 🚚 Faster local delivery\n"
+        "✨ Why choose our sellers?\n"
+        "• 🚚 Faster delivery\n"
         "• 💬 Direct communication with sellers\n"
-        "• 🏠 Support local businesses\n"
-        "• 💯 Verified Nigerian sellers\n"
+        "• 🏠 Support businesses\n"
+        "• 💯 Verified Worldwide sellers\n"
     )
     
     # Only suggest external as BONUS option
@@ -251,7 +251,7 @@ def generate_no_results_response(query):
     ENHANCED: Better no-results response that keeps users on Finda
     """
     return (
-        f"🔍 I searched Finda's marketplace thoroughly for '{query}' but didn't find exact matches right now.\n\n"
+        f"🔍 I searched our platform thoroughly for '{query}' but didn't find exact matches right now.\n\n"
         f"Don't give up! Here's how I can help:\n\n"
         f"1️⃣ Try different keywords\n"
         f"   • Maybe 'phone' instead of 'smartphone'\n"
@@ -346,7 +346,7 @@ def format_categories_response():
     if not categories.exists():
         return "No categories available right now."
     
-    response_lines = ["🛍️ Browse Finda's Popular Categories:\n"]
+    response_lines = ["🛍️ Browse our Popular Categories:\n"]
     
     for cat in categories:
         # Count items in category
