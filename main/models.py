@@ -182,11 +182,7 @@ class Products(models.Model):
     
     CONDITION_CHOICES = [
         ('new', 'Brand New'),
-        ('like_new', 'Like New'),
-        ('excellent', 'Excellent'),
-        ('good', 'Good'),
-        ('fair', 'Fair'),
-        ('poor', 'Poor'),
+        ('used', 'Used'),
         ('refurbished', 'Refurbished'),
     ]
     
@@ -198,7 +194,8 @@ class Products(models.Model):
     
     # Images
     featured_image = CloudinaryField('product_images/featured')
-    gallery_images = models.JSONField(default=list, blank=True, help_text="Store multiple Cloudinary URLs")
+    # gallery_images = models.JSONField(default=list, blank=True, help_text="Store multiple Cloudinary URLs")
+    gallery_images = CloudinaryField('product_images/gallery')
     
     # Pricing
     product_price = models.DecimalField(max_digits=15, decimal_places=2)
@@ -348,7 +345,8 @@ class Services(models.Model):
     
     # Images
     featured_image = CloudinaryField('service_images/featured')
-    gallery_images = models.JSONField(default=list, blank=True)
+    # gallery_images = models.JSONField(default=list, blank=True)
+    gallery_images = CloudinaryField('service_images/gallery')
     
     # Location (Foreign Keys)
     country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name='services')

@@ -100,7 +100,7 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'slug', 'description', 'category_type', 'parent',
             'parent_name', 'icon', 'image', 'image_url', 'is_featured', 'subcategories',
-            'full_path', 'products_count', 'services_count'
+            'full_path', 'products', 'services'
         ]
     
     
@@ -172,34 +172,9 @@ class ServiceRatingSerializer(serializers.ModelSerializer):
 #  PRODUCT SERIALIZERS
 # ===========================
 class ProductsSerializer(serializers.ModelSerializer):
-    featured_image_url = serializers.SerializerMethodField()
-    gallery_image_urls = serializers.SerializerMethodField()
-    ...
-    
-    class Meta:
-        model = Products
-        fields = [
-            # existing fields
-            'featured_image', 'gallery_images',  # keep original fields for admin/internal use
-            'featured_image_url', 'gallery_image_urls',  # add these for the frontend
-            ...
-        ]
-        ...
-
-    def get_featured_image_url(self, obj):
-        return obj.featured_image.url if obj.featured_image else None
-
-    def get_gallery_image_urls(self, obj):
-        # If already stored as full URLs in gallery_images field
-        return obj.gallery_images if isinstance(obj.gallery_images, list) else []
-    
-
-
-
-class ProductsSerializer(serializers.ModelSerializer):
     # Images
     featured_image_url = serializers.SerializerMethodField()
-    gallery_image_urls = serializers.SerializerMethodField()
+    gallery_image_url = serializers.SerializerMethodField()
 
     # Computed fields
     average_rating = serializers.SerializerMethodField()
@@ -224,8 +199,8 @@ class ProductsSerializer(serializers.ModelSerializer):
         model = Products
         fields = [
             # Basic fields
-            'id', 'slug', 'product_name', 'product_description', 'featured_image', 'gallery_images',  # keep original fields for admin/internal use
-            'featured_image_url', 'gallery_image_urls',  # add these for the frontend 'product_price', 'original_price', 'currency',
+            'id', 'slug', 'product_name', 'product_description', 'featured_image', 'gallery_images',
+            'featured_image_url', 'gallery_image_url', 'product_price', 'original_price', 'currency',
             'is_negotiable', 'product_brand', 'product_model', 'product_condition',
             'product_status', 'tags', 'address_details',
             
@@ -261,9 +236,9 @@ class ProductsSerializer(serializers.ModelSerializer):
     def get_featured_image_url(self, obj):
         return obj.featured_image.url if obj.featured_image else None
 
-    def get_gallery_image_urls(self, obj):
+    def get_gallery_image_url(self, obj):
         # If already stored as full URLs in gallery_images field
-        return obj.gallery_images if isinstance(obj.gallery_images, list) else []
+        return obj.gallery_images if obj.gallery_images else None
     
     def get_average_rating(self, obj):
         return obj.average_rating()
@@ -343,6 +318,10 @@ class ProductUpdateSerializer(serializers.ModelSerializer):
 # ===========================
 
 class ServicesSerializer(serializers.ModelSerializer):
+    # Images
+    featured_image_url = serializers.SerializerMethodField()
+    gallery_image_url = serializers.SerializerMethodField()
+
     # Computed fields
     average_rating = serializers.SerializerMethodField()
     rating_count = serializers.SerializerMethodField()
@@ -366,7 +345,7 @@ class ServicesSerializer(serializers.ModelSerializer):
         fields = [
             # Basic fields
             'id', 'slug', 'service_name', 'service_description', 'featured_image',
-            'gallery_images', 'serves_remote', 'service_radius', 'tags',
+            'gallery_images', 'featured_image_url', 'gallery_image_url', 'serves_remote', 'service_radius', 'tags',
             
             # Provider info
             'provider_name', 'provider_title', 'provider_bio', 'provider_expertise',
@@ -407,6 +386,13 @@ class ServicesSerializer(serializers.ModelSerializer):
             'id', 'slug', 'user', 'views_count', 'contacts_count',
             'created_at', 'updated_at', 'published_at'
         ]
+
+    def get_featured_image_url(self, obj):
+        return obj.featured_image.url if obj.featured_image else None
+
+    def get_gallery_image_url(self, obj):
+        # If already stored as full URLs in gallery_images field
+        return obj.gallery_images if obj.gallery_images else None
     
     def get_average_rating(self, obj):
         return obj.average_rating()
