@@ -30,7 +30,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 # ===========================
-#  LOCATION SERIALIZERS
+#  COUNTRY SERIALIZERS
 # ===========================
 
 class CountrySerializer(serializers.ModelSerializer):
@@ -46,6 +46,9 @@ class CountrySerializer(serializers.ModelSerializer):
     def get_display_name(self, obj):
         return f"{obj.flag_emoji} {obj.name}" if obj.flag_emoji else obj.name
 
+# ===========================
+#  STATE SERIALIZERS
+# ===========================
 
 class StateSerializer(serializers.ModelSerializer):
     country_name = serializers.CharField(source='country.name', read_only=True)
@@ -60,6 +63,9 @@ class StateSerializer(serializers.ModelSerializer):
     def get_display_name(self, obj):
         return f"{obj.name} ({obj.code})" if obj.code else obj.name
 
+# ===========================
+#  CITY SERIALIZERS
+# ===========================
 
 class CitySerializer(serializers.ModelSerializer):
     state_name = serializers.CharField(source='state.name', read_only=True)
@@ -77,6 +83,9 @@ class CitySerializer(serializers.ModelSerializer):
     def get_full_address(self, obj):
         return obj.get_full_address()
 
+# ===========================
+#  CATEGORIES SERIALIZERS
+# ===========================
 
 class CategorySerializer(serializers.ModelSerializer):
     parent_name = serializers.CharField(source='parent.name', read_only=True)
@@ -84,15 +93,20 @@ class CategorySerializer(serializers.ModelSerializer):
     full_path = serializers.SerializerMethodField()
     products_count = serializers.IntegerField(read_only=True)
     services_count = serializers.IntegerField(read_only=True)
+    image_url = serializers.SerializerMethodField()
     
     class Meta:
         model = Category
         fields = [
             'id', 'name', 'slug', 'description', 'category_type', 'parent',
-            'parent_name', 'icon', 'image', 'is_featured', 'subcategories',
+            'parent_name', 'icon', 'image', 'image_url', 'is_featured', 'subcategories',
             'full_path', 'products_count', 'services_count'
         ]
     
+    
+    def get_image_url(self, obj):
+        return obj.image.url if obj.image else None
+
     def get_subcategories(self, obj):
         if hasattr(obj, 'subcategories'):
             return CategorySerializer(obj.get_children(), many=True).data
@@ -101,6 +115,15 @@ class CategorySerializer(serializers.ModelSerializer):
     def get_full_path(self, obj):
         return obj.get_full_path()
 
+    def get_products_count(self, obj):
+        from main.models import Products
+        subcategories = [obj] + obj.get_all_subcategories()
+        return Products.objects.filter(category__in=subcategories, product_status='published', product_type='product').count()
+
+    def get_services_count(self, obj):
+        from main.models import Products
+        subcategories = [obj] + obj.get_all_subcategories()
+        return Products.objects.filter(category__in=subcategories, product_status='published', product_type='service').count()
 
 # ===========================
 #  RATING SERIALIZERS
@@ -148,8 +171,36 @@ class ServiceRatingSerializer(serializers.ModelSerializer):
 # ===========================
 #  PRODUCT SERIALIZERS
 # ===========================
+class ProductsSerializer(serializers.ModelSerializer):
+    featured_image_url = serializers.SerializerMethodField()
+    gallery_image_urls = serializers.SerializerMethodField()
+    ...
+    
+    class Meta:
+        model = Products
+        fields = [
+            # existing fields
+            'featured_image', 'gallery_images',  # keep original fields for admin/internal use
+            'featured_image_url', 'gallery_image_urls',  # add these for the frontend
+            ...
+        ]
+        ...
+
+    def get_featured_image_url(self, obj):
+        return obj.featured_image.url if obj.featured_image else None
+
+    def get_gallery_image_urls(self, obj):
+        # If already stored as full URLs in gallery_images field
+        return obj.gallery_images if isinstance(obj.gallery_images, list) else []
+    
+
+
 
 class ProductsSerializer(serializers.ModelSerializer):
+    # Images
+    featured_image_url = serializers.SerializerMethodField()
+    gallery_image_urls = serializers.SerializerMethodField()
+
     # Computed fields
     average_rating = serializers.SerializerMethodField()
     rating_count = serializers.SerializerMethodField()
@@ -173,8 +224,8 @@ class ProductsSerializer(serializers.ModelSerializer):
         model = Products
         fields = [
             # Basic fields
-            'id', 'slug', 'product_name', 'product_description', 'featured_image',
-            'gallery_images', 'product_price', 'original_price', 'currency',
+            'id', 'slug', 'product_name', 'product_description', 'featured_image', 'gallery_images',  # keep original fields for admin/internal use
+            'featured_image_url', 'gallery_image_urls',  # add these for the frontend 'product_price', 'original_price', 'currency',
             'is_negotiable', 'product_brand', 'product_model', 'product_condition',
             'product_status', 'tags', 'address_details',
             
@@ -206,6 +257,13 @@ class ProductsSerializer(serializers.ModelSerializer):
             'id', 'slug', 'user', 'views_count', 'favorites_count', 
             'created_at', 'updated_at', 'published_at'
         ]
+    
+    def get_featured_image_url(self, obj):
+        return obj.featured_image.url if obj.featured_image else None
+
+    def get_gallery_image_urls(self, obj):
+        # If already stored as full URLs in gallery_images field
+        return obj.gallery_images if isinstance(obj.gallery_images, list) else []
     
     def get_average_rating(self, obj):
         return obj.average_rating()

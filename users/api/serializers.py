@@ -75,12 +75,21 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
+    profile_url = serializers.SerializerMethodField()
+    business_image_url = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = ('id', 'email', 'first_name', 'last_name', 'phone', 'profile', 'date_joined', 
-                 'user_type', 'business_name', 'business_description', 'business_image')
+                 'user_type', 'business_name', 'business_description', 'profile_url', 'business_image_url', 'business_image')
         read_only_fields = ('email', 'date_joined', 'user_type')
 
+    def get_profile_url(self, obj):
+        return obj.profile.url if obj.profile else None
+
+    def get_business_image_url(self, obj):
+        return obj.business_image.url if obj.business_image else None
+    
     def update(self, instance, validated_data):
         # Handle profile image upload with error handling
         if 'profile' in validated_data:
