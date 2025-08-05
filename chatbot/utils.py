@@ -363,14 +363,15 @@ def format_finda_results(results, query="", limit=3):
                 except:
                     rating_text = "⭐ New listing"
                 
-                # Format each result with enthusiasm
                 response_lines.append(
-                    f"{i}. {name}{discount_text}\n"
-                    f"   💰 Price: {price_formatted}\n"
-                    f"   📍 Location: {location}\n"
-                    f"   {rating_text}\n"
-                    f"   🔗 [View Details & Contact Seller](https://finda-six.vercel.app{url})\n"
+                    f"<strong>{i}. {name}</strong>{discount_text}<br>"
+                    f"💰 <strong>Price:</strong> {price_formatted}<br>"
+                    f"📍 <strong>Location:</strong> {location}<br>"
+                    f"{rating_text}<br>"
+                    f'🔗 <a href="https://finda-six.vercel.app{url}" target="_blank" rel="noopener noreferrer">View Details</a>'
+                    "<hr>"
                 )
+
                 
             except Exception as item_error:
                 logger.error(f"Error formatting result {i}: {str(item_error)}")
@@ -389,7 +390,7 @@ def format_finda_results(results, query="", limit=3):
         
         # Promote Finda benefits
         response_lines.append(
-            "✨ Why choose Finda sellers?\n"
+            "✨ <strong>Why choose Finda sellers?</strong>\n"
             "• 🚚 Faster delivery\n"
             "• 💬 Direct communication with sellers\n"
             "• 🏠 Support local businesses\n"
@@ -408,7 +409,7 @@ def format_finda_results(results, query="", limit=3):
         logger.error(f"Results formatting error: {str(e)}")
         # Return basic fallback
         try:
-            return f"Found {len(results)} items on Finda for '{query}'. Contact sellers directly for details!"
+            return f"Found <strong>{len(results)}</strong> items on Finda for <strong>'{query}'</strong>. Contact sellers directly for details!"
         except:
             return "Found several items on Finda! Contact sellers for details."
 
@@ -443,17 +444,17 @@ def generate_no_results_response(query):
         
         suggestion_text = ""
         if suggestions:
-            suggestion_text = f"Try searching for: {', '.join(suggestions)}"
+            suggestion_text = f"Try searching for: <strong>{', '.join(suggestions)}</strong>"
         else:
             suggestion_text = "Try different keywords or brand names"
         
         return f"""
-🔍 I searched Finda thoroughly for '{query}' but didn't find exact matches right now.
+🔍 I searched our platform thoroughly for <strong>'{query}'</strong> but didn't find exact matches right now.
 
 Don't give up! Here's how I can help:
 
 1️⃣ Try different keywords
-   • {suggestion_text}
+   • <strong>{suggestion_text}</strong>
    • Use specific brand names
 
 2️⃣ Browse our categories
@@ -461,7 +462,7 @@ Don't give up! Here's how I can help:
    • Discover similar items you might like
 
 3️⃣ Set up alerts (Coming soon!)
-   • Get notified when '{query}' arrives on Finda
+   • Get notified when <strong>'{query}'</strong> arrives on Finda
 
 4️⃣ Search external stores
    • Amazon, Jumia, Konga as backup options
@@ -470,7 +471,7 @@ What would you prefer? Say 'categories' to browse, or 'external' to check other 
 """
         
     except Exception as e:
-        logger.error(f"No results response error: {str(e)}")
+        logger.error(f"No results response error: <strong>{str(e)}</strong>")
         return f"I didn't find '{query}' right now. Try different keywords or say 'categories' to browse!"
 
 
@@ -482,7 +483,7 @@ def search_by_category(category_name, limit=8):
         if not category_name:
             return []
         
-        logger.info(f"🔍 Searching by category: {category_name}")
+        logger.info(f"🔍 Searching by category: <strong>{category_name}</strong>")
         
         # Find category (case insensitive) with error handling
         try:
@@ -495,10 +496,10 @@ def search_by_category(category_name, limit=8):
             return []
         
         if not category:
-            logger.info(f"Category '{category_name}' not found")
+            logger.info(f"Category <strong>'{category_name}'</strong> not found")
             return []
         
-        logger.info(f"🔍 Found category: {category.name}")
+        logger.info(f"🔍 Found category: <strong>{category.name}</strong>")
         
         # Get products and services in this category with error handling
         all_items = []
@@ -643,7 +644,7 @@ def format_categories_response():
         response_lines.append(
             "\n💡 How to search:\n"
             "• Type any category name above\n"
-            "• Search for specific items (e.g., 'iPhone', 'plumber')\n"
+            "• Search for specific items (e.g., products: <strong>'smart watch'</strong>, <strong>'samsung'</strong>, or services: <strong>'plumber'</strong>)\n"
             "• Send me a photo of what you want\n"
             "• Use voice messages to search\n\n"
             "What are you looking for today?"

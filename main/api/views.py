@@ -150,16 +150,34 @@ class CityViewSet(viewsets.ReadOnlyModelViewSet):
         
         serializer = self.get_serializer(queryset[:50], many=True)
         return Response(serializer.data)
+    
 
 
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
-    """ViewSet for categories with admin write permissions"""
-    queryset = Category.objects.filter(is_active=True).order_by('sort_order', 'name')
+    """ViewSet for categories with optimized counting"""
     serializer_class = CategorySerializer
     permission_classes = [IsAdminOrReadOnly]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = CategoryFilter
     search_fields = ['name', 'description']
     ordering_fields = ['name', 'sort_order']
+
+    def get_queryset(self):
+        """Optimized queryset to reduce database queries"""
+        return Category.objects.filter(is_active=True).select_related(
+            'parent'
+        ).prefetch_related(
+            'subcategories',
+            # Prefetch related products and services for efficient counting
+            Prefetch(
+                'products',
+                queryset=Products.objects.filter(product_status='published').only('id', 'category')
+            ),
+            Prefetch(
+                'services', 
+                queryset=Services.objects.filter(service_status='published').only('id', 'category')
+            )
+        ).order_by('sort_order', 'name')
 
     @action(detail=False, methods=['get'])
     def root_categories(self, request):
@@ -173,9 +191,22 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
         """Get subcategories for a specific category"""
         category = self.get_object()
         subcategories = category.get_children()
+        
+        # Apply same optimization to subcategories
+        subcategories = subcategories.select_related('parent').prefetch_related(
+            'subcategories',
+            Prefetch(
+                'products',
+                queryset=Products.objects.filter(product_status='published').only('id', 'category')
+            ),
+            Prefetch(
+                'services',
+                queryset=Services.objects.filter(service_status='published').only('id', 'category')
+            )
+        )
+        
         serializer = self.get_serializer(subcategories, many=True)
         return Response(serializer.data)
-
 
 # ===========================
 #  CORE BUSINESS LOGIC

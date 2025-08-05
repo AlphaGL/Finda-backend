@@ -91,8 +91,8 @@ class CategorySerializer(serializers.ModelSerializer):
     parent_name = serializers.CharField(source='parent.name', read_only=True)
     subcategories = serializers.SerializerMethodField()
     full_path = serializers.SerializerMethodField()
-    products_count = serializers.IntegerField(read_only=True)
-    services_count = serializers.IntegerField(read_only=True)
+    products_count = serializers.SerializerMethodField()  # Changed to SerializerMethodField
+    services_count = serializers.SerializerMethodField()  # Changed to SerializerMethodField
     image_url = serializers.SerializerMethodField()
     
     class Meta:
@@ -100,30 +100,52 @@ class CategorySerializer(serializers.ModelSerializer):
         fields = [
             'id', 'name', 'slug', 'description', 'category_type', 'parent',
             'parent_name', 'icon', 'image', 'image_url', 'is_featured', 'subcategories',
-            'full_path', 'products', 'services'
+            'full_path', 'products_count', 'services_count'
         ]
-    
     
     def get_image_url(self, obj):
         return obj.image.url if obj.image else None
 
     def get_subcategories(self, obj):
-        if hasattr(obj, 'subcategories'):
-            return CategorySerializer(obj.get_children(), many=True).data
+        children = obj.get_children()
+        if children.exists():
+            return CategorySerializer(children, many=True, context=self.context).data
         return []
     
     def get_full_path(self, obj):
         return obj.get_full_path()
 
     def get_products_count(self, obj):
-        from main.models import Products
-        subcategories = [obj] + obj.get_all_subcategories()
-        return Products.objects.filter(category__in=subcategories, product_status='published', product_type='product').count()
+        try:
+            from ..models import Products  # Correct import path
+            
+            # Get all categories (current + all subcategories)
+            all_categories = [obj] + list(obj.get_all_subcategories())
+            
+            # Count products - no product_type filter needed
+            return Products.objects.filter(
+                category__in=all_categories,
+                product_status='published'
+            ).count()
+        except Exception as e:
+            print(f"Error counting products for category {obj.id}: {e}")
+            return 0
 
     def get_services_count(self, obj):
-        from main.models import Products
-        subcategories = [obj] + obj.get_all_subcategories()
-        return Products.objects.filter(category__in=subcategories, product_status='published', product_type='service').count()
+        try:
+            from ..models import Services  # Import Services model
+            
+            # Get all categories (current + all subcategories)
+            all_categories = [obj] + list(obj.get_all_subcategories())
+            
+            # Count services using Services model
+            return Services.objects.filter(
+                category__in=all_categories,
+                service_status='published'  # Use service_status
+            ).count()
+        except Exception as e:
+            print(f"Error counting services for category {obj.id}: {e}")
+            return 0 
 
 # ===========================
 #  RATING SERIALIZERS
