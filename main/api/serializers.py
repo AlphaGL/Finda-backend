@@ -260,7 +260,7 @@ class ProductsSerializer(serializers.ModelSerializer):
 
     def get_gallery_image_url(self, obj):
         # If already stored as full URLs in gallery_images field
-        return obj.gallery_images if obj.gallery_images else None
+        return obj.gallery_images if isinstance(obj.gallery_images, list) else []
     
     def get_average_rating(self, obj):
         return obj.average_rating()
@@ -414,7 +414,7 @@ class ServicesSerializer(serializers.ModelSerializer):
 
     def get_gallery_image_url(self, obj):
         # If already stored as full URLs in gallery_images field
-        return obj.gallery_images if obj.gallery_images else None
+        return obj.gallery_images if isinstance(obj.gallery_images, list) else []
     
     def get_average_rating(self, obj):
         return obj.average_rating()
