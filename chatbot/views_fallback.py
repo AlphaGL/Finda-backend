@@ -1,724 +1,1548 @@
-# api/serializers.py - Updated for Enhanced Location System
-from rest_framework import serializers
-from django.contrib.auth import get_user_model
-from django.core.validators import MinValueValidator, MaxValueValidator
-from decimal import Decimal
-
-from ..models import (
-    Country, State, City, Category,
-    Products, Services,
-    ProductRating, ServiceRating,
-    UserFavorite, SearchHistory
-)
-
-User = get_user_model()
-
-# ===========================
-#  USER SERIALIZER
-# ===========================
-
-class UserSerializer(serializers.ModelSerializer):
-    full_name = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = User
-        fields = ['id', 'username', 'email', 'first_name', 'last_name', 'full_name']
-        read_only_fields = ['id']
-    
-    def get_full_name(self, obj):
-        return f"{obj.first_name} {obj.last_name}".strip() or obj.username
-
-
-# ===========================
-#  COUNTRY SERIALIZERS
-# ===========================
-
-class CountrySerializer(serializers.ModelSerializer):
-    display_name = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Country
-        fields = [
-            'id', 'name', 'code', 'phone_code', 'currency_code', 
-            'currency_symbol', 'flag_emoji', 'continent', 'display_name'
-        ]
-    
-    def get_display_name(self, obj):
-        return f"{obj.flag_emoji} {obj.name}" if obj.flag_emoji else obj.name
-
-# ===========================
-#  STATE SERIALIZERS
-# ===========================
-
-class StateSerializer(serializers.ModelSerializer):
-    country_name = serializers.CharField(source='country.name', read_only=True)
-    display_name = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = State
-        fields = [
-            'id', 'name', 'code', 'type', 'country', 'country_name', 'display_name'
-        ]
-    
-    def get_display_name(self, obj):
-        return f"{obj.name} ({obj.code})" if obj.code else obj.name
-
-# ===========================
-#  CITY SERIALIZERS
-# ===========================
-
-class CitySerializer(serializers.ModelSerializer):
-    state_name = serializers.CharField(source='state.name', read_only=True)
-    country_name = serializers.CharField(source='country.name', read_only=True)
-    full_address = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = City
-        fields = [
-            'id', 'name', 'state', 'country', 'state_name', 'country_name',
-            'latitude', 'longitude', 'population', 'is_capital', 
-            'is_major_city', 'full_address'
-        ]
-    
-    def get_full_address(self, obj):
-        return obj.get_full_address()
-
-# ===========================
-#  CATEGORIES SERIALIZERS
-# ===========================
-
-class CategorySerializer(serializers.ModelSerializer):
-    parent_name = serializers.CharField(source='parent.name', read_only=True)
-    subcategories = serializers.SerializerMethodField()
-    full_path = serializers.SerializerMethodField()
-    products_count = serializers.SerializerMethodField()  # Changed to SerializerMethodField
-    services_count = serializers.SerializerMethodField()  # Changed to SerializerMethodField
-    image_url = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Category
-        fields = [
-            'id', 'name', 'slug', 'description', 'category_type', 'parent',
-            'parent_name', 'icon', 'image', 'image_url', 'is_featured', 'subcategories',
-            'full_path', 'products_count', 'services_count'
-        ]
-    
-    def get_image_url(self, obj):
-        return obj.image.url if obj.image else None
-
-    def get_subcategories(self, obj):
-        children = obj.get_children()
-        if children.exists():
-            return CategorySerializer(children, many=True, context=self.context).data
-        return []
-    
-    def get_full_path(self, obj):
-        return obj.get_full_path()
-
-    def get_products_count(self, obj):
-        try:
-            from ..models import Products  # Correct import path
+'multiple', 'camera', 'split', 'screen', 'view',
             
-            # Get all categories (current + all subcategories)
-            all_categories = [obj] + list(obj.get_all_subcategories())
+            # Feeding & Nursing
+            'bottle', 'feeding', 'formula', 'breast', 'milk', 'storage',
+            'bag', 'container', 'freezer', 'safe', 'sterilizer', 'warmer',
+            'nipple', 'teat', 'slow', 'flow', 'medium', 'fast', 'variable',
+            'anti', 'colic', 'venting', 'system', 'natural', 'shape',
+            'wide', 'neck', 'standard', 'glass', 'plastic', 'stainless',
+            'steel', 'sippy', 'cup', 'training', 'cup', 'straw', 'cup',
+            'spout', 'cup', '360', 'degree', 'rim', 'weighted', 'straw',
+            'handles', 'grip', 'non', 'slip', 'base', 'leak', 'proof',
+            'spill', 'proof', 'valve', 'bite', 'sip', 'high', 'chair',
+            'booster', 'seat', 'hook', 'on', 'chair', 'travel', 'chair',
+            'portable', 'folding', 'adjustable', 'height', 'reclining',
+            'footrest', 'safety', 'harness', 'crotch', 'post', 'tray',
+            'dishwasher', 'safe', 'easy', 'clean', 'wipe', 'down',
+            'food', 'processor', 'baby', 'food', 'maker', 'steamer',
+            'blender', 'puree', 'chop', 'steam', 'reheat', 'defrost',
+            'portion', 'control', 'storage', 'cups', 'freezer', 'trays',
+            'ice', 'cube', 'trays', 'silicone', 'molds', 'baby', 'led',
+            'weaning', 'blw', 'finger', 'foods', 'self', 'feeding',
+            'mesh', 'feeder', 'fruit', 'feeder', 'teether', 'soother',
+            'pacifier', 'dummy', 'binky', 'orthodontic', 'cherry',
+            'shaped', 'symmetrical', 'one', 'piece', 'silicone', 'latex',
+            'bpa', 'free', 'age', 'appropriate', 'newborn', '0-6',
+            'months', '6-18', '18+', 'glow', 'in', 'the', 'dark',
+            'clip', 'holder', 'strap', 'keeper', 'case', 'sterilizing',
             
-            # Count products - no product_type filter needed
-            return Products.objects.filter(
-                category__in=all_categories,
-                product_status='published'
-            ).count()
-        except Exception as e:
-            print(f"Error counting products for category {obj.id}: {e}")
-            return 0
-
-    def get_services_count(self, obj):
-        try:
-            from ..models import Services  # Import Services model
+            # Baby Gear & Accessories  
+            'baby', 'carrier', 'wrap', 'sling', 'structured', 'carrier',
+            'soft', 'structured', 'carrier', 'ssc', 'mei', 'tai',
+            'ring', 'sling', 'pouch', 'sling', 'stretchy', 'wrap',
+            'woven', 'wrap', 'hybrid', 'carrier', 'front', 'carry',
+            'back', 'carry', 'hip', 'carry', 'inward', 'facing',
+            'outward', 'facing', 'ergonomic', 'position', 'seat',
+            'natural', 'm', 'position', 'adjustable', 'panel',
+            'newborn', 'insert', 'infant', 'support', 'head',
+            'support', 'sleeping', 'hood', 'drool', 'pad', 'bib',
+            'teething', 'pad', 'reversible', 'organic', 'cotton',
+            'bamboo', 'linen', 'mesh', 'breathable', 'all', 'season',
+            'summer', 'winter', 'weight', 'limit', 'distribution',
+            'lumbar', 'support', 'padded', 'waist', 'belt', 'shoulder',
+            'straps', 'chest', 'strap', 'perfect', 'fit', 'adjuster',
+            'ergobaby', 'lillebaby', 'tula', 'kinderpack', 'beco',
+            'boba', 'moby', 'solly', 'baby', 'ktan', 'infantino',
+            'baby', 'bjorn', 'chicco', 'graco', 'evenflo', 'safety',
+            'bouncer', 'rocker', 'swing', 'glider', 'vibrating',
+            'seat', 'stationary', 'portable', 'battery', 'operated',
+            'plug', 'in', 'rechargeable', 'multiple', 'speeds',
+            'timer', 'music', 'sounds', 'nature', 'white', 'noise',
+            'mobile', 'toy', 'bar', 'removable', 'toys', 'crinkle',
+            'rattle', 'mirror', 'textured', 'fabric', 'teething',
+            'ring', 'links', 'developmental', 'sensory', 'stimulation',
+            'visual', 'auditory', 'tactile', 'motor', 'skills',
+            'hand', 'eye', 'coordination', 'cause', 'effect',
+            'jumper', 'bouncer', 'activity', 'center', 'exersaucer',
+            'stationary', 'jumper', 'doorway', 'jumper', 'clamp',
+            'on', 'spring', 'loaded', '360', 'degree', 'rotating',
+            'seat', 'adjustable', 'height', 'positions', 'activity',
+            'toys', 'lights', 'sounds', 'music', 'electronic',
+            'piano', 'keyboard', 'drum', 'spinner', 'bead', 'chaser',
+            'rattle', 'teether', 'mirror', 'crinkle', 'fabric',
+            'walker', 'push', 'toy', 'ride', 'on', 'toy', 'activity',
+            'table', 'learning', 'toy', 'developmental', 'toy',
+            'educational', 'toy', 'electronic', 'toy', 'interactive',
+            'toy', 'cause', 'and', 'effect', 'toy', 'busy', 'board',
+            'activity', 'board', 'sensory', 'board', 'montessori',
+            'toy', 'waldorf', 'toy', 'wooden', 'toy', 'natural',
+            'toy', 'organic', 'toy', 'eco', 'friendly', 'toy',
             
-            # Get all categories (current + all subcategories)
-            all_categories = [obj] + list(obj.get_all_subcategories())
+            # Kids Toys & Games
+            'toy', 'toys', 'action', 'figure', 'doll', 'stuffed', 'animal',
+            'plush', 'teddy', 'bear', 'puzzle', 'board', 'game', 'card',
+            'game', 'video', 'game', 'electronic', 'toy', 'remote',
+            'control', 'rc', 'car', 'truck', 'helicopter', 'drone',
+            'boat', 'robot', 'building', 'blocks', 'lego', 'duplo',
+            'mega', 'bloks', 'k-nex', 'lincoln', 'logs', 'tinker',
+            'toys', 'erector', 'set', 'meccano', 'magnetic', 'tiles',
+            'magna', 'tiles', 'picasso', 'tiles', 'playmags', 'train',
+            'set', 'thomas', 'tank', 'engine', 'brio', 'wooden',
+            'railway', 'hot', 'wheels', 'matchbox', 'cars', 'trucks',
+            'emergency', 'vehicles', 'construction', 'vehicles',
+            'farm', 'animals', 'zoo', 'animals', 'dinosaurs',
+            'prehistoric', 'creatures', 'sea', 'life', 'insects',
+            'bugs', 'reptiles', 'amphibians', 'birds', 'pets',
+            'domestic', 'animals', 'wild', 'animals', 'safari',
+            'jungle', 'forest', 'arctic', 'desert', 'ocean',
+            'kitchen', 'set', 'play', 'food', 'pretend', 'play',
+            'dress', 'up', 'costumes', 'role', 'play', 'doctor',
+            'kit', 'tool', 'set', 'workbench', 'cash', 'register',
+            'grocery', 'store', 'shopping', 'cart', 'tea', 'set',
+            'dishes', 'pots', 'pans', 'utensils', 'cutting', 'food',
+            'velcro', 'magnetic', 'wooden', 'plastic', 'realistic',
+            'sounds', 'lights', 'interactive', 'features', 'batteries',
+            'included', 'required', 'aa', 'aaa', 'c', 'd', '9v',
+            'rechargeable', 'usb', 'charging', 'cable', 'adapter',
+            'age', 'recommendation', 'months', 'years', 'up', 'choking',
+            'hazard', 'small', 'parts', 'not', 'suitable', 'under',
+            'adult', 'supervision', 'recommended', 'safety', 'tested',
+            'astm', 'cpsc', 'en71', 'ce', 'mark', 'rohs', 'compliant',
+            'phthalate', 'free', 'lead', 'free', 'non', 'toxic',
+            'paint', 'finish', 'water', 'based', 'natural', 'wood',
+            'sustainable', 'materials', 'recycled', 'content',
+            'educational', 'value', 'stem', 'steam', 'science',
+            'technology', 'engineering', 'arts', 'mathematics',
+            'creativity', 'imagination', 'problem', 'solving',
+            'critical', 'thinking', 'logic', 'reasoning', 'memory',
+            'concentration', 'attention', 'span', 'focus', 'patience',
+            'perseverance', 'confidence', 'self', 'esteem', 'social',
+            'skills', 'communication', 'language', 'vocabulary',
+            'reading', 'writing', 'spelling', 'phonics', 'numbers',
+            'counting', 'addition', 'subtraction', 'multiplication',
+            'division', 'fractions', 'geometry', 'shapes', 'colors',
+            'patterns', 'sorting', 'matching', 'sequencing', 'classification',
             
-            # Count services using Services model
-            return Services.objects.filter(
-                category__in=all_categories,
-                service_status='published'  # Use service_status
-            ).count()
-        except Exception as e:
-            print(f"Error counting services for category {obj.id}: {e}")
-            return 0 
-
-# ===========================
-#  RATING SERIALIZERS
-# ===========================
-
-class ProductRatingSerializer(serializers.ModelSerializer):
-    user_details = UserSerializer(source='user', read_only=True)
-    user_name = serializers.CharField(source='user.username', read_only=True)
-    
-    class Meta:
-        model = ProductRating
-        fields = [
-            'id', 'user', 'user_details', 'user_name', 'rating', 'review_title',
-            'review', 'pros', 'cons', 'would_recommend', 'is_verified_purchase',
-            'helpful_count', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['user', 'created_at', 'updated_at', 'helpful_count']
-    
-    def validate_rating(self, value):
-        if not (1.0 <= value <= 5.0):
-            raise serializers.ValidationError("Rating must be between 1.0 and 5.0")
-        return value
-
-
-class ServiceRatingSerializer(serializers.ModelSerializer):
-    user_details = UserSerializer(source='user', read_only=True)
-    user_name = serializers.CharField(source='user.username', read_only=True)
-    
-    class Meta:
-        model = ServiceRating
-        fields = [
-            'id', 'user', 'user_details', 'user_name', 'rating', 'review_title',
-            'review', 'communication_rating', 'quality_rating', 'timeliness_rating',
-            'would_recommend', 'would_hire_again', 'is_verified_customer',
-            'helpful_count', 'created_at', 'updated_at'
-        ]
-        read_only_fields = ['user', 'created_at', 'updated_at', 'helpful_count']
-    
-    def validate_rating(self, value):
-        if not (1.0 <= value <= 5.0):
-            raise serializers.ValidationError("Rating must be between 1.0 and 5.0")
-        return value
-
-
-# ===========================
-#  PRODUCT SERIALIZERS
-# ===========================
-class ProductsSerializer(serializers.ModelSerializer):
-    # Images
-    featured_image_url = serializers.SerializerMethodField()
-    gallery_image_url = serializers.SerializerMethodField()
-
-    # Computed fields
-    average_rating = serializers.SerializerMethodField()
-    rating_count = serializers.SerializerMethodField()
-    formatted_price = serializers.SerializerMethodField()
-    discount_percentage = serializers.SerializerMethodField()
-    currency_symbol = serializers.SerializerMethodField()
-    full_location = serializers.SerializerMethodField()
-    tags_list = serializers.SerializerMethodField()
-    
-    # Related object details
-    user_details = UserSerializer(source='user', read_only=True)
-    country_details = CountrySerializer(source='country', read_only=True)
-    state_details = StateSerializer(source='state', read_only=True)
-    city_details = CitySerializer(source='city', read_only=True)
-    category_details = CategorySerializer(source='category', read_only=True)
-    
-    # Ratings (limited for performance)
-    recent_ratings = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Products
-        fields = [
-            # Basic fields
-            'id', 'slug', 'product_name', 'product_description', 'featured_image', 'gallery_images',
-            'featured_image_url', 'gallery_image_url', 'product_price', 'original_price', 'currency',
-            'is_negotiable', 'product_brand', 'product_model', 'product_condition',
-            'product_status', 'tags', 'address_details',
+            # School & Art Supplies
+            'school', 'supplies', 'backpack', 'lunchbox', 'pencil',
+            'case', 'binder', 'folder', 'notebook', 'paper', 'pencil',
+            'pen', 'marker', 'crayon', 'colored', 'pencil', 'eraser',
+            'sharpener', 'ruler', 'scissors', 'glue', 'tape', 'stapler',
+            'hole', 'punch', 'calculator', 'protractor', 'compass',
+            'art', 'supplies', 'paint', 'brush', 'canvas', 'easel',
+            'palette', 'watercolor', 'acrylic', 'oil', 'tempera',
+            'finger', 'paint', 'washable', 'non', 'toxic', 'ap',
+            'certified', 'lightfast', 'pigment', 'quality', 'student',
+            'grade', 'artist', 'grade', 'professional', 'beginner',
+            'intermediate', 'advanced', 'set', 'kit', 'individual',
+            'tube', 'jar', 'bottle', 'cake', 'pan', 'refillable',
+            'disposable', 'synthetic', 'natural', 'bristle', 'flat',
+            'round', 'filbert', 'fan', 'detail', 'liner', 'wash',
+            'mop', 'size', 'number', 'width', 'length', 'ferrule',
+            'handle', 'short', 'long', 'ergonomic', 'comfortable',
+            'grip', 'wood', 'plastic', 'metal', 'bamboo', 'sustainable',
+            'clay', 'modeling', 'play', 'doh', 'playdough', 'kinetic',
+            'sand', 'slime', 'putty', 'foam', 'dough', 'air', 'dry',
+            'oven', 'bake', 'polymer', 'ceramic', 'pottery', 'wheel',
+            'kiln', 'glazes', 'tools', 'sculpting', 'carving', 'shaping',
+            'rolling', 'pin', 'cookie', 'cutter', 'texture', 'mat',
+            'stamp', 'mold', 'extruder', 'wire', 'cutting', 'tool',
+            'needle', 'tool', 'rib', 'tool', 'sponge', 'chamois',
+            'apron', 'smock', 'protective', 'clothing', 'drop',
+            'cloth', 'plastic', 'tablecloth', 'newspaper', 'cardboard',
+            'mat', 'cutting', 'mat', 'self', 'healing', 'rotating',
+            'grid', 'lines', 'measurements', 'inches', 'centimeters',
+            'craft', 'knife', 'x-acto', 'blade', 'replacement',
+            'safety', 'cap', 'handle', 'metal', 'ruler', 'straight',
+            'edge', 'triangle', 'square', 'curve', 'french', 'curve',
+            'ship', 'curve', 'flexible', 'bendable', 'cork', 'backed',
             
-            # Contact info
-            'provider_phone', 'provider_email', 'provider_whatsapp',
+            # === PETS & ANIMALS ===
             
-            # Business features
-            'is_paid', 'is_promoted', 'is_featured', 'promotion_fee',
-            'views_count', 'favorites_count',
+            # Dogs
+            'dog', 'puppy', 'canine', 'breed', 'purebred', 'mixed',
+            'breed', 'mutt', 'rescue', 'adoption', 'shelter', 'breeder',
+            'akc', 'registered', 'pedigree', 'champion', 'bloodline',
+            'small', 'medium', 'large', 'giant', 'toy', 'miniature',
+            'standard', 'size', 'weight', 'height', 'length', 'coat',
+            'fur', 'hair', 'short', 'long', 'curly', 'straight',
+            'wavy', 'wiry', 'smooth', 'rough', 'double', 'single',
+            'undercoat', 'topcoat', 'shedding', 'non', 'shedding',
+            'hypoallergenic', 'grooming', 'brush', 'comb', 'rake',
+            'de', 'shedding', 'tool', 'nail', 'clipper', 'grinder',
+            'dremel', 'file', 'styptic', 'powder', 'ear', 'cleaner',
+            'cotton', 'ball', 'swab', 'dental', 'care', 'toothbrush',
+            'toothpaste', 'enzymatic', 'water', 'additive', 'breath',
+            'spray', 'dental', 'chew', 'treat', 'bone', 'antler',
+            'bully', 'stick', 'rawhide', 'pig', 'ear', 'cow',
+            'hoof', 'lamb', 'lung', 'freeze', 'dried', 'dehydrated',
+            'natural', 'organic', 'grain', 'free', 'gluten', 'free',
+            'limited', 'ingredient', 'novel', 'protein', 'single',
+            'source', 'protein', 'beef', 'chicken', 'turkey', 'lamb',
+            'fish', 'salmon', 'duck', 'venison', 'rabbit', 'kangaroo',
+            'food', 'kibble', 'dry', 'wet', 'canned', 'raw', 'freeze',
+            'dried', 'dehydrated', 'fresh', 'refrigerated', 'frozen',
+            'puppy', 'adult', 'senior', 'all', 'life', 'stages',
+            'small', 'breed', 'large', 'breed', 'indoor', 'outdoor',
+            'active', 'working', 'performance', 'weight', 'management',
+            'sensitive', 'stomach', 'skin', 'allergies', 'prescription',
+            'diet', 'veterinary', 'recommended', 'therapeutic', 'hill',
+            'science', 'diet', 'royal', 'canin', 'purina', 'pro',
+            'plan', 'iams', 'eukanuba', 'blue', 'buffalo', 'wellness',
+            'merrick', 'taste', 'wild', 'orijen', 'acana', 'fromm',
+            'collar', 'leash', 'harness', 'no', 'pull', 'front',
+            'clip', 'back', 'clip', 'step', 'in', 'over', 'head',
+            'adjustable', 'padded', 'reflective', 'led', 'light',
+            'up', 'glow', 'safety', 'visibility', 'night', 'walking',
+            'retractable', 'extending', 'standard', 'length', 'feet',
+            'meters', 'small', 'medium', 'large', 'extra', 'large',
+            'weight', 'limit', 'pounds', 'kilograms', 'nylon', 'leather',
+            'chain', 'rope', 'bungee', 'elastic', 'shock', 'absorbing',
+            'hands', 'free', 'waist', 'belt', 'running', 'jogging',
+            'hiking', 'canicross', 'bikejoring', 'skijoring', 'mushing',
+            'sled', 'dog', 'racing', 'competition', 'sport', 'activity',
+            'exercise', 'fitness', 'health', 'mental', 'stimulation',
+            'enrichment', 'puzzle', 'toy', 'interactive', 'treat',
+            'dispensing', 'slow', 'feeder', 'lick', 'mat', 'snuffle',
+            'mat', 'hide', 'seek', 'game', 'training', 'obedience',
+            'agility', 'rally', 'tracking', 'scent', 'work', 'therapy',
+            'service', 'emotional', 'support', 'esa', 'certification',
+            'registration', 'vest', 'patch', 'id', 'card', 'documentation',
+            'bed', 'crate', 'kennel', 'carrier', 'travel', 'airline',
+            'approved', 'soft', 'sided', 'hard', 'sided', 'wheeled',
+            'backpack', 'car', 'seat', 'booster', 'safety', 'harness',
+            'barrier', 'gate', 'ramp', 'steps', 'stairs', 'orthopedic',
+            'memory', 'foam', 'cooling', 'heating', 'self', 'warming',
+            'waterproof', 'washable', 'removable', 'cover', 'zipper',
+            'non', 'slip', 'bottom', 'raised', 'edges', 'bolster',
+            'donut', 'round', 'rectangular', 'square', 'oval',
             
-            # SEO
-            'meta_title', 'meta_description',
+            # Cats
+            'cat', 'kitten', 'feline', 'indoor', 'outdoor', 'feral',
+            'stray', 'barn', 'cat', 'alley', 'cat', 'house', 'cat',
+            'apartment', 'cat', 'lap', 'cat', 'mouser', 'hunter',
+            'predator', 'prey', 'drive', 'instinct', 'behavior',
+            'territorial', 'social', 'solitary', 'independent',
+            'affectionate', 'playful', 'curious', 'intelligent',
+            'trainable', 'litter', 'box', 'trained', 'house',
+            'trained', 'scratch', 'post', 'scratching', 'tree',
+            'tower', 'condo', 'furniture', 'sisal', 'rope',
+            'carpet', 'cardboard', 'corrugated', 'horizontal',
+            'vertical', 'angled', 'multi', 'level', 'platform',
+            'perch', 'hideaway', 'cave', 'tunnel', 'hammock',
+            'hanging', 'bed', 'cushion', 'pad', 'replacement',
+            'parts', 'assembly', 'instructions', 'tools', 'included',
+            'easy', 'setup', 'no', 'tools', 'required', 'modular',
+            'expandable', 'customizable', 'space', 'saving',
+            'corner', 'wall', 'mounted', 'ceiling', 'height',
+            'floor', 'ceiling', 'tension', 'pole', 'clamp',
+            'screw', 'in', 'freestanding', 'stable', 'wobble',
+            'free', 'tip', 'proof', 'safety', 'tested', 'weight',
+            'capacity', 'multiple', 'cats', 'household', 'senior',
+            'cats', 'arthritic', 'cats', 'declawed', 'cats',
+            'litter', 'clay', 'clumping', 'non', 'clumping',
+            'crystal', 'silica', 'gel', 'natural', 'corn',
+            'wheat', 'pine', 'recycled', 'paper', 'walnut',
+            'shell', 'coconut', 'coir', 'bamboo', 'grass',
+            'seed', 'tofu', 'soy', 'flushable', 'biodegradable',
+            'compostable', 'eco', 'friendly', 'sustainable',
+            'dust', 'free', 'low', 'dust', 'unscented',
+            'scented', 'odor', 'control', 'baking', 'soda',
+            'antimicrobial', 'antibacterial', 'lightweight',
+            'easy', 'pour', 'spout', 'handle', 'resealable',
+            'bag', 'bucket', 'jug', 'box', 'bulk', 'wholesale',
+            'subscription', 'delivery', 'auto', 'ship', 'save',
+            'discount', 'free', 'shipping', 'prime', 'eligible',
+            'same', 'day', 'delivery', 'next', 'day', 'two',
+            'day', 'standard', 'ground', 'expedited', 'express',
+            'overnight', 'signature', 'required', 'adult',
+            'residential', 'commercial', 'po', 'box', 'apo',
+            'fpo', 'international', 'canada', 'mexico', 'europe',
+            'asia', 'australia', 'worldwide', 'global', 'import',
+            'duties', 'taxes', 'customs', 'declaration', 'value',
+            'insurance', 'tracking', 'number', 'confirmation',
+            'email', 'text', 'notification', 'delivery', 'attempt',
+            'failed', 'delivery', 'redelivery', 'hold', 'pickup',
+            'location', 'ups', 'store', 'fedex', 'office',
+            'post', 'office', 'amazon', 'locker', 'hub',
+            'counter', 'package', 'room', 'doorstep', 'porch',
+            'mailbox', 'secure', 'location', 'neighbor', 'concierge',
+            'leasing', 'office', 'reception', 'desk', 'front',
+            'desk', 'security', 'guard', 'doorman', 'building',
+            'manager', 'superintendent', 'caretaker', 'maintenance',
             
-            # Timestamps
-            'created_at', 'updated_at', 'published_at', 'expires_at',
-            
-            # Foreign keys
-            'user', 'country', 'state', 'city', 'category',
-            
-            # Computed fields
-            'average_rating', 'rating_count', 'formatted_price', 
-            'discount_percentage', 'currency_symbol', 'full_location', 'tags_list',
-            
-            # Related details
-            'user_details', 'country_details', 'state_details', 
-            'city_details', 'category_details', 'recent_ratings'
-        ]
-        read_only_fields = [
-            'id', 'slug', 'user', 'views_count', 'favorites_count', 
-            'created_at', 'updated_at', 'published_at'
-        ]
-    
-    def get_featured_image_url(self, obj):
-        return obj.featured_image.url if obj.featured_image else None
-
-    def get_gallery_image_url(self, obj):
-        # If already stored as full URLs in gallery_images field
-        return obj.gallery_images if isinstance(obj.gallery_images, list) else []
-    
-    def get_average_rating(self, obj):
-        return obj.average_rating()
-    
-    def get_rating_count(self, obj):
-        return obj.rating_count()
-    
-    def get_formatted_price(self, obj):
-        return obj.get_formatted_price()
-    
-    def get_discount_percentage(self, obj):
-        return obj.get_discount_percentage()
-    
-    def get_currency_symbol(self, obj):
-        return obj.get_currency_symbol()
-    
-    def get_full_location(self, obj):
-        return obj.get_full_location()
-    
-    def get_tags_list(self, obj):
-        return obj.get_tags_list()
-    
-    def get_recent_ratings(self, obj):
-        recent = obj.product_ratings.filter(is_active=True)[:3]
-        return ProductRatingSerializer(recent, many=True).data
-
-
-class ProductCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Products
-        fields = [
-            'product_name', 'product_description', 'featured_image', 'gallery_images',
-            'product_price', 'original_price', 'is_negotiable', 'country', 'state', 
-            'city', 'address_details', 'category', 'tags', 'product_brand', 
-            'product_model', 'product_condition', 'provider_phone', 'provider_email',
-            'provider_whatsapp', 'is_promoted', 'meta_title', 'meta_description'
-        ]
-    
-    def validate_product_price(self, value):
-        if value <= 0:
-            raise serializers.ValidationError("Price must be greater than zero.")
-        if value > 999999999:
-            raise serializers.ValidationError("Price is too high.")
-        return value
-    
-    def validate_product_name(self, value):
-        if len(value.strip()) < 3:
-            raise serializers.ValidationError("Product name must be at least 3 characters long.")
-        if len(value.strip()) > 200:
-            raise serializers.ValidationError("Product name is too long.")
-        return value.strip()
-    
-    def validate(self, data):
-        # Validate original price if provided
-        if data.get('original_price') and data.get('product_price'):
-            if data['original_price'] <= data['product_price']:
-                raise serializers.ValidationError(
-                    "Original price must be higher than current price."
-                )
-        return data
-
-
-class ProductUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Products
-        fields = [
-            'product_name', 'product_description', 'featured_image', 'gallery_images',
-            'product_price', 'original_price', 'is_negotiable', 'address_details',
-            'tags', 'product_brand', 'product_model', 'product_condition',
-            'provider_phone', 'provider_email', 'provider_whatsapp',
-            'meta_title', 'meta_description'
-        ]
-
-
-# ===========================
-#  SERVICE SERIALIZERS
-# ===========================
-
-class ServicesSerializer(serializers.ModelSerializer):
-    # Images
-    featured_image_url = serializers.SerializerMethodField()
-    gallery_image_url = serializers.SerializerMethodField()
-
-    # Computed fields
-    average_rating = serializers.SerializerMethodField()
-    rating_count = serializers.SerializerMethodField()
-    formatted_price_range = serializers.SerializerMethodField()
-    currency_symbol = serializers.SerializerMethodField()
-    full_location = serializers.SerializerMethodField()
-    tags_list = serializers.SerializerMethodField()
-    
-    # Related object details
-    user_details = UserSerializer(source='user', read_only=True)
-    country_details = CountrySerializer(source='country', read_only=True)
-    state_details = StateSerializer(source='state', read_only=True)
-    city_details = CitySerializer(source='city', read_only=True)
-    category_details = CategorySerializer(source='category', read_only=True)
-    
-    # Recent ratings
-    recent_ratings = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = Services
-        fields = [
-            # Basic fields
-            'id', 'slug', 'service_name', 'service_description', 'featured_image',
-            'gallery_images', 'featured_image_url', 'gallery_image_url', 'serves_remote', 'service_radius', 'tags',
-            
-            # Provider info
-            'provider_name', 'provider_title', 'provider_bio', 'provider_expertise',
-            'provider_experience', 'provider_certifications', 'provider_languages',
-            
-            # Contact info
-            'provider_email', 'provider_phone', 'provider_whatsapp',
-            'provider_website', 'provider_linkedin',
-            
-            # Pricing
-            'starting_price', 'max_price', 'currency', 'price_type',
-            
-            # Service details
-            'service_status', 'response_time', 'availability',
-            
-            # Business features
-            'is_paid', 'is_promoted', 'is_featured', 'is_verified',
-            'promotion_fee', 'views_count', 'contacts_count',
-            
-            # SEO
-            'meta_title', 'meta_description',
-            
-            # Timestamps
-            'created_at', 'updated_at', 'published_at', 'expires_at',
-            
-            # Foreign keys
-            'user', 'country', 'state', 'city', 'category',
-            
-            # Computed fields
-            'average_rating', 'rating_count', 'formatted_price_range',
-            'currency_symbol', 'full_location', 'tags_list',
-            
-            # Related details
-            'user_details', 'country_details', 'state_details',
-            'city_details', 'category_details', 'recent_ratings'
-        ]
-        read_only_fields = [
-            'id', 'slug', 'user', 'views_count', 'contacts_count',
-            'created_at', 'updated_at', 'published_at'
-        ]
-
-    def get_featured_image_url(self, obj):
-        return obj.featured_image.url if obj.featured_image else None
-
-    def get_gallery_image_url(self, obj):
-        # If already stored as full URLs in gallery_images field
-        return obj.gallery_images if isinstance(obj.gallery_images, list) else []
-    
-    def get_average_rating(self, obj):
-        return obj.average_rating()
-    
-    def get_rating_count(self, obj):
-        return obj.rating_count()
-    
-    def get_formatted_price_range(self, obj):
-        return obj.get_formatted_price_range()
-    
-    def get_currency_symbol(self, obj):
-        return obj.get_currency_symbol()
-    
-    def get_full_location(self, obj):
-        return obj.get_full_location()
-    
-    def get_tags_list(self, obj):
-        return obj.get_tags_list()
-    
-    def get_recent_ratings(self, obj):
-        recent = obj.service_ratings.filter(is_active=True)[:3]
-        return ServiceRatingSerializer(recent, many=True).data
-
-
-class ServiceCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Services
-        fields = [
-            'service_name', 'service_description', 'featured_image', 'gallery_images',
-            'country', 'state', 'city', 'serves_remote', 'service_radius',
-            'category', 'tags', 'provider_name', 'provider_title', 'provider_bio',
-            'provider_expertise', 'provider_experience', 'provider_certifications',
-            'provider_languages', 'provider_email', 'provider_phone',
-            'provider_whatsapp', 'provider_website', 'provider_linkedin',
-            'starting_price', 'max_price', 'price_type', 'response_time',
-            'availability', 'is_promoted', 'meta_title', 'meta_description'
-        ]
-    
-    def validate_service_name(self, value):
-        if len(value.strip()) < 3:
-            raise serializers.ValidationError("Service name must be at least 3 characters long.")
-        if len(value.strip()) > 200:
-            raise serializers.ValidationError("Service name is too long.")
-        return value.strip()
-    
-    def validate_provider_email(self, value):
-        if '@' not in value:
-            raise serializers.ValidationError("Enter a valid email address.")
-        return value.lower()
-    
-    def validate(self, data):
-        # Validate price range
-        starting_price = data.get('starting_price')
-        max_price = data.get('max_price')
+            # Fish & Aquarium
+            'fish', 'aquarium', 'tank', 'freshwater', 'saltwater',
+            'marine', 'reef', 'tropical', 'coldwater', 'goldfish',
+            'betta', 'guppy', 'tetra', 'angel', 'fish', 'cichlid',
+            'barb', 'danio', 'rasbora', 'corydoras', 'pleco',
+            'catfish', 'loach', 'eel', 'shark', 'ray', 'puffer',
+            'trigger', 'fish', 'wrasse', 'goby', 'blenny',
+            'cardinal', 'clown', 'fish', 'tang', 'surgeon',
+            'fish', 'mandarin', 'fish', 'flame', 'angel',
+            'emperor', 'angel', 'queen', 'angel', 'butterfly',
+            'fish', 'parrot', 'fish', 'grouper', 'snapper',
+            'grunt', 'bass', 'damsel', 'fish', 'chromis',
+            'anthias', 'dottyback', 'gramma', 'hawkfish',
+            'frogfish', 'seahorse', 'pipefish', 'boxfish',
+            'cowfish', 'filefish', 'rabbit', 'fish', 'fox',
+            'face', 'lion', 'fish', 'scorpion', 'fish',
+            'stone', 'fish', 'leaf', 'fish', 'ghost',
+            'pipe', 'fish', 'sea', 'dragon', 'weedy',
+            'leafy', 'mandarin', 'dragonet', 'scooter',
+            'blenny', 'lawnmower', 'blenny', 'flame',
+            'hawk', 'fish', 'long', 'nose', 'hawk',
+            'filter', 'filtration', 'system', 'canister',
+            'hang', 'on', 'back', 'hob', 'internal',
+            'external', 'sump', 'wet', 'dry', 'trickle',
+            'fluidized', 'bed', 'undergravel', 'ugf',
+            'power', 'head', 'wave', 'maker', 'circulation',
+            'pump', 'return', 'pump', 'skimmer', 'protein',
+            'skimmer', 'ozone', 'generator', 'uv', 'sterilizer',
+            'chiller', 'heater', 'thermostat', 'controller',
+            'temperature', 'probe', 'thermometer', 'digital',
+            'analog', 'stick', 'on', 'floating', 'submersible',
+            'lighting', 'led', 'fluorescent', 't5', 't8',
+            'compact', 'fluorescent', 'pc', 'metal', 'halide',
+            'mh', 'high', 'pressure', 'sodium', 'hps',
+            'actinic', 'blue', 'full', 'spectrum', 'daylight',
+            '10000k', '20000k', 'par', 'photosynthetically',
+            'active', 'radiation', 'photoperiod', 'timer',
+            'dimmer', 'controller', 'sunrise', 'sunset',
+            'moon', 'phase', 'simulation', 'storm', 'cloud',
+            'lightning', 'effect', 'wireless', 'app',
+            'controlled', 'programmable', 'preset', 'custom',
+            'substrate', 'gravel', 'sand', 'crushed', 'coral',
+            'aragonite', 'live', 'sand', 'play', 'sand',
+            'pool', 'filter', 'sand', 'black', 'diamond',
+            'blasting', 'sand', 'pea', 'gravel', 'river',
+            'rock', 'lava', 'rock', 'ceramic', 'rings',
+            'bio', 'balls', 'filter', 'media', 'mechanical',
+            'biological', 'chemical', 'carbon', 'activated',
+            'carbon', 'purigen', 'chemipure', 'phosphate',
+            'remover', 'nitrate', 'remover', 'ammonia',
+            'remover', 'ion', 'exchange', 'resin', 'zeolite',
+            'decoration', 'ornament', 'artificial', 'plant',
+            'silk', 'plant', 'plastic', 'plant', 'live',
+            'plant', 'aquatic', 'plant', 'stem', 'plant',
+            'rosette', 'plant', 'floating', 'plant', 'moss',
+            'fern', 'anubias', 'java', 'fern', 'amazon',
+            'sword', 'vallisneria', 'cryptocoryne', 'ludwigia',
+            'rotala', 'hygrophila', 'limnophila', 'cabomba',
+            'hornwort', 'elodea', 'egeria', 'najas',
+            'riccia', 'christmas', 'moss', 'flame', 'moss',
+            'taiwan', 'moss', 'fissidens', 'fontanus',
+            'weeping', 'moss', 'phoenix', 'moss', 'spiky',
+            'moss', 'stringy', 'moss', 'mini', 'pellia',
+            'coral', 'soft', 'coral', 'hard', 'coral',
+            'lps', 'sps', 'zoanthid', 'palythoa', 'mushroom',
+            'coral', 'leather', 'coral', 'tree', 'coral',
+            'brain', 'coral', 'plate', 'coral', 'bubble',
+            'coral', 'hammer', 'coral', 'frogspawn',
+            'coral', 'torch', 'coral', 'candy', 'cane',
+            'coral', 'trumpet', 'coral', 'duncan',
+            'coral', 'acropora', 'montipora', 'stylophora',
+            'pocillopora', 'seriatopora', 'birdsnest',
+            'coral', 'staghorn', 'coral', 'table', 'coral',
+            'digitate', 'coral', 'encrusting', 'coral',
+            'plating', 'coral', 'mounding', 'coral',
+        }
         
-        if starting_price and max_price:
-            if starting_price >= max_price:
-                raise serializers.ValidationError(
-                    "Starting price must be less than maximum price."
-                )
+        # Extract meaningful words (3+ characters, alphabetic only)
+        words = re.findall(r'\b[a-zA-Z]{3,}\b', analysis_text.lower())
+        meaningful_words = [word for word in words if word not in stop_words]
         
-        return data
-
-
-class ServiceUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Services
-        fields = [
-            'service_name', 'service_description', 'featured_image', 'gallery_images',
-            'serves_remote', 'service_radius', 'tags', 'provider_name',
-            'provider_title', 'provider_bio', 'provider_expertise',
-            'provider_experience', 'provider_certifications', 'provider_languages',
-            'provider_email', 'provider_phone', 'provider_whatsapp',
-            'provider_website', 'provider_linkedin', 'starting_price',
-            'max_price', 'price_type', 'response_time', 'availability',
-            'meta_title', 'meta_description'
-        ]
-
-
-# ===========================
-#  UTILITY SERIALIZERS
-# ===========================
-
-class UserFavoriteSerializer(serializers.ModelSerializer):
-    product_details = ProductsSerializer(source='product', read_only=True)
-    service_details = ServicesSerializer(source='service', read_only=True)
-    item_type = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = UserFavorite
-        fields = ['id', 'product', 'service', 'product_details', 'service_details', 
-                 'item_type', 'created_at']
-        read_only_fields = ['id', 'created_at']
-    
-    def get_item_type(self, obj):
-        if obj.product:
-            return 'product'
-        elif obj.service:
-            return 'service'
-        return None
-
-
-class LocationHierarchySerializer(serializers.Serializer):
-    country = CountrySerializer(read_only=True)
-    state = StateSerializer(read_only=True)
-    city = CitySerializer(read_only=True)
-
-
-# ===========================
-#  PAGE SERIALIZERS
-# ===========================
-
-class HomePageSerializer(serializers.Serializer):
-    promoted_products = ProductsSerializer(many=True, read_only=True)
-    promoted_services = ServicesSerializer(many=True, read_only=True)
-    products = ProductsSerializer(many=True, read_only=True)
-    services = ServicesSerializer(many=True, read_only=True)
-    filter_options = serializers.DictField(read_only=True)
-    applied_filters = serializers.DictField(read_only=True)
-    total_results = serializers.DictField(read_only=True)
-
-
-class StatsSerializer(serializers.Serializer):
-    total_products = serializers.IntegerField()
-    published_products = serializers.IntegerField()
-    pending_products = serializers.IntegerField()
-    total_services = serializers.IntegerField()
-    published_services = serializers.IntegerField()
-    pending_services = serializers.IntegerField()
-    total_product_ratings = serializers.IntegerField()
-    total_service_ratings = serializers.IntegerField()
-    top_locations = serializers.ListField(read_only=True)
-    top_categories = serializers.ListField(read_only=True)
-
-
-# ===========================
-#  SEARCH SERIALIZERS
-# ===========================
-
-class SearchSerializer(serializers.Serializer):
-    q = serializers.CharField(required=False, max_length=200, allow_blank=True)
-    category = serializers.CharField(required=False, max_length=100, allow_blank=True)
-    location = serializers.CharField(required=False, max_length=100, allow_blank=True)
-    min_price = serializers.DecimalField(required=False, max_digits=10, decimal_places=2, min_value=0)
-    max_price = serializers.DecimalField(required=False, max_digits=10, decimal_places=2, min_value=0)
-    min_rating = serializers.DecimalField(required=False, max_digits=2, decimal_places=1, min_value=1.0, max_value=5.0)
-    item_type = serializers.ChoiceField(
-        choices=[('all', 'All'), ('products', 'Products'), ('services', 'Services')],
-        required=False,
-        default='all'
-    )
-    
-    def validate(self, data):
-        min_price = data.get('min_price')
-        max_price = data.get('max_price')
+        # Prioritize important terms - exact matches get highest priority
+        prioritized_terms = []
+        remaining_terms = []
         
-        if min_price and max_price and min_price >= max_price:
-            raise serializers.ValidationError("Minimum price must be less than maximum price.")
+        for word in meaningful_words:
+            if word in priority_terms:
+                if word not in prioritized_terms:  # Avoid duplicates
+                    prioritized_terms.append(word)
+            else:
+                if word not in remaining_terms:  # Avoid duplicates
+                    remaining_terms.append(word)
         
-        return data
+        # Combine prioritized terms first, then remaining terms
+        import re
+import logging
 
+logger = logging.getLogger(__name__)
 
-# ===========================
-#  PAYMENT SERIALIZERS
-# ===========================
-
-class PaymentInitiateSerializer(serializers.Serializer):
-    product_id = serializers.IntegerField(required=False)
-    service_id = serializers.IntegerField(required=False)
-    
-    def validate(self, data):
-        product_id = data.get('product_id')
-        service_id = data.get('service_id')
+def extract_search_terms_from_analysis(analysis_text):
+    """
+    SUPERCHARGED: Extract relevant search terms from AI image analysis
+    Acts as the "brain" for Finda's search pipeline with comprehensive stop words 
+    and exhaustive priority terms covering all major product categories.
+    """
+    try:
+        if not analysis_text:
+            return ""
         
-        if not product_id and not service_id:
-            raise serializers.ValidationError("Either product_id or service_id is required")
-        
-        if product_id and service_id:
-            raise serializers.ValidationError("Provide either product_id or service_id, not both")
-        
-        return data
+        # SUPERCHARGED STOP WORDS SET - Comprehensive noise filtering
+        stop_words = {
+            # Basic articles, pronouns & conjunctions
+            'the', 'and', 'or', 'but', 'if', 'then', 'else', 'when', 'while', 'as', 'than', 'that',
+            'this', 'these', 'those', 'it', 'its', 'they', 'them', 'their', 'we', 'us', 'our', 'you',
+            'your', 'yours', 'i', 'me', 'my', 'mine', 'he', 'him', 'his', 'she', 'her', 'hers', 'who',
+            'whom', 'whose', 'which', 'what', 'where', 'why', 'how', 'a', 'an',
 
+            # Verb auxiliaries & common verbs
+            'is', 'are', 'was', 'were', 'be', 'been', 'being', 'am', 'do', 'does', 'did', 'doing',
+            'have', 'has', 'had', 'having', 'can', 'could', 'should', 'would', 'shall', 'will', 'may',
+            'might', 'must', 'get', 'got', 'getting', 'give', 'gives', 'given', 'go', 'goes', 'going',
+            'come', 'comes', 'coming', 'take', 'takes', 'taking', 'make', 'makes', 'making', 'put',
+            'puts', 'putting', 'use', 'uses', 'using', 'used', 'say', 'says', 'said', 'saying',
+            'tell', 'tells', 'telling', 'told', 'ask', 'asks', 'asking', 'asked', 'work', 'works',
+            'working', 'worked', 'try', 'tries', 'trying', 'tried', 'need', 'needs', 'needing',
+            'needed', 'want', 'wants', 'wanting', 'wanted', 'like', 'likes', 'liking', 'liked',
+            'love', 'loves', 'loving', 'loved', 'know', 'knows', 'knowing', 'knew', 'known',
+            'think', 'thinks', 'thinking', 'thought', 'feel', 'feels', 'feeling', 'felt',
+            'seem', 'seems', 'seeming', 'seemed', 'become', 'becomes', 'becoming', 'became',
 
-class PaymentVerifySerializer(serializers.Serializer):
-    product_id = serializers.IntegerField(required=False)
-    service_id = serializers.IntegerField(required=False)
-    
-    def validate(self, data):
-        product_id = data.get('product_id')
-        service_id = data.get('service_id')
-        
-        if not product_id and not service_id:
-            raise serializers.ValidationError("Either product_id or service_id is required")
-        
-        if product_id and service_id:
-            raise serializers.ValidationError("Provide either product_id or service_id, not both")
-        
-        return data
+            # Prepositions & position words
+            'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'about', 'into', 'over', 'under',
+            'between', 'among', 'across', 'through', 'before', 'after', 'during', 'within', 'without',
+            'up', 'down', 'off', 'onto', 'out', 'around', 'near', 'above', 'below', 'behind', 'beside',
+            'beneath', 'beyond', 'inside', 'outside', 'toward', 'towards', 'against', 'along', 'amid',
+            'amidst', 'concerning', 'considering', 'despite', 'except', 'excluding', 'following',
+            'including', 'regarding', 'unlike', 'until', 'upon', 'via', 'worth',
 
+            # Image/visual analysis noise words
+            'image', 'images', 'picture', 'pictures', 'photo', 'photos', 'pic', 'pics', 'see', 'show',
+            'shows', 'showing', 'shown', 'look', 'looks', 'looking', 'looked', 'find', 'finds',
+            'finding', 'found', 'search', 'searches', 'searching', 'searched', 'appears', 'appear',
+            'appearing', 'appeared', 'display', 'displays', 'displaying', 'displayed', 'view', 'views',
+            'viewing', 'viewed', 'browse', 'browses', 'browsing', 'browsed', 'check', 'checks',
+            'checking', 'checked', 'visible', 'visibility', 'visual', 'visually', 'observe', 'observes',
+            'observing', 'observed', 'notice', 'notices', 'noticing', 'noticed', 'spot', 'spots',
+            'spotting', 'spotted', 'detect', 'detects', 'detecting', 'detected', 'identify', 'identifies',
+            'identifying', 'identified', 'recognize', 'recognizes', 'recognizing', 'recognized',
+            'capture', 'captures', 'capturing', 'captured', 'scan', 'scans', 'scanning', 'scanned',
 
-class PaymentCallbackSerializer(serializers.Serializer):
-    reference = serializers.CharField(max_length=100)
-    status = serializers.CharField(max_length=50, required=False)
+            # Descriptive but non-essential qualifiers
+            'new', 'newer', 'newest', 'latest', 'recent', 'recently', 'old', 'older', 'oldest', 'ancient',
+            'brand', 'branded', 'unbranded', 'best', 'better', 'top', 'superior', 'excellent', 'perfect',
+            'good', 'great', 'amazing', 'awesome', 'wonderful', 'fantastic', 'superb', 'outstanding',
+            'bad', 'worse', 'worst', 'terrible', 'awful', 'horrible', 'poor', 'cheap', 'cheaper',
+            'cheapest', 'expensive', 'pricey', 'costly', 'affordable', 'budget', 'premium', 'luxury',
+            'deluxe', 'standard', 'basic', 'advanced', 'professional', 'commercial', 'industrial',
+            'quality', 'high', 'higher', 'highest', 'low', 'lower', 'lowest', 'medium', 'average',
+            'normal', 'regular', 'typical', 'common', 'rare', 'unique', 'special', 'specific',
+            'general', 'particular', 'certain', 'sure', 'exact', 'precise', 'accurate', 'correct',
+            'right', 'wrong', 'proper', 'improper', 'appropriate', 'inappropriate', 'suitable',
+            'unsuitable', 'perfect', 'imperfect', 'complete', 'incomplete', 'full', 'empty',
+            'available', 'unavailable', 'popular', 'unpopular', 'famous', 'unknown', 'well-known',
 
+            # Size and measurement descriptors
+            'big', 'bigger', 'biggest', 'large', 'larger', 'largest', 'huge', 'enormous', 'giant',
+            'massive', 'small', 'smaller', 'smallest', 'tiny', 'mini', 'micro', 'compact', 'portable',
+            'long', 'longer', 'longest', 'short', 'shorter', 'shortest', 'tall', 'taller', 'tallest',
+            'wide', 'wider', 'widest', 'narrow', 'narrower', 'narrowest', 'thick', 'thicker',
+            'thickest', 'thin', 'thinner', 'thinnest', 'deep', 'deeper', 'deepest', 'shallow',
+            'heavy', 'heavier', 'heaviest', 'light', 'lighter', 'lightest', 'weight', 'size',
+            'dimension', 'dimensions', 'measurement', 'measurements', 'scale', 'length', 'width',
+            'height', 'depth', 'diameter', 'radius', 'circumference', 'area', 'volume', 'capacity',
 
-class PaymentStatusResponseSerializer(serializers.Serializer):
-    item_type = serializers.CharField()
-    item_id = serializers.IntegerField()
-    item_name = serializers.CharField()
-    is_paid = serializers.BooleanField()
-    status = serializers.CharField()
-    is_promoted = serializers.BooleanField()
-    promotion_fee = serializers.DecimalField(max_digits=10, decimal_places=2)
-    published_at = serializers.DateTimeField(allow_null=True)
-    created_at = serializers.DateTimeField()
+            # Temporal words
+            'today', 'yesterday', 'tomorrow', 'now', 'later', 'soon', 'early', 'late', 'current',
+            'present', 'past', 'future', 'year', 'years', 'month', 'months', 'week', 'weeks',
+            'day', 'days', 'hour', 'hours', 'minute', 'minutes', 'second', 'seconds', 'time',
+            'timing', 'schedule', 'season', 'seasonal', 'spring', 'summer', 'autumn', 'fall',
+            'winter', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+            'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september',
+            'october', 'november', 'december', 'weekend', 'weekday', 'morning', 'afternoon',
+            'evening', 'night', 'midnight', 'noon', 'daily', 'weekly', 'monthly', 'yearly',
 
+            # Numbers & ordinals (often irrelevant unless price/model)
+            'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+            'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen',
+            'eighteen', 'nineteen', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy',
+            'eighty', 'ninety', 'hundred', 'thousand', 'million', 'billion', 'first', 'second',
+            'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth',
+            'last', 'final', 'initial', 'primary', 'secondary', 'tertiary', 'next', 'previous',
+            'single', 'double', 'triple', 'multiple', 'several', 'many', 'few', 'some', 'all',
+            'every', 'each', 'both', 'either', 'neither', 'none', 'any', 'most', 'least',
 
-class PaymentHistorySerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    item_name = serializers.CharField()
-    status = serializers.CharField()
-    is_promoted = serializers.BooleanField()
-    promotion_fee = serializers.DecimalField(max_digits=10, decimal_places=2)
-    published_at = serializers.DateTimeField()
-    created_at = serializers.DateTimeField()
+            # Generic object/item references
+            'item', 'items', 'thing', 'things', 'stuff', 'object', 'objects', 'piece', 'pieces',
+            'part', 'parts', 'component', 'components', 'element', 'elements', 'unit', 'units',
+            'device', 'devices', 'tool', 'tools', 'equipment', 'gear', 'kit', 'kits', 'set', 'sets',
+            'collection', 'collections', 'group', 'groups', 'bundle', 'bundles', 'package',
+            'packages', 'box', 'boxes', 'container', 'containers', 'holder', 'holders',
+            'material', 'materials', 'substance', 'substances', 'content', 'contents',
 
+            # Generic business/commerce terms
+            'product', 'products', 'service', 'services', 'business', 'company', 'companies',
+            'brand', 'brands', 'market', 'markets', 'store', 'stores', 'shop', 'shops',
+            'shopping', 'buy', 'buying', 'bought', 'sell', 'selling', 'sold', 'purchase',
+            'purchasing', 'purchased', 'order', 'ordering', 'ordered', 'delivery', 'shipping',
+            'payment', 'price', 'prices', 'cost', 'costs', 'fee', 'fees', 'charge', 'charges',
+            'offer', 'offers', 'offering', 'offered', 'deal', 'deals', 'sale', 'sales',
+            'discount', 'discounts', 'promotion', 'promotions', 'coupon', 'coupons',
 
-class PaymentSummarySerializer(serializers.Serializer):
-    total_payments = serializers.IntegerField()
-    total_products_paid = serializers.IntegerField()
-    total_services_paid = serializers.IntegerField()
-    total_amount_paid = serializers.DecimalField(max_digits=12, decimal_places=2)
-    base_listing_fee = serializers.DecimalField(max_digits=10, decimal_places=2)
+            # Communication & interaction words
+            'info', 'information', 'details', 'detail', 'description', 'descriptions', 'explain',
+            'explains', 'explaining', 'explained', 'help', 'helps', 'helping', 'helped', 'assist',
+            'assists', 'assisting', 'assisted', 'support', 'supports', 'supporting', 'supported',
+            'guide', 'guides', 'guiding', 'guided', 'instruction', 'instructions', 'manual',
+            'manuals', 'tutorial', 'tutorials', 'example', 'examples', 'sample', 'samples',
+            'demo', 'demos', 'demonstration', 'demonstrations', 'review', 'reviews', 'reviewing',
+            'reviewed', 'rating', 'ratings', 'feedback', 'comment', 'comments', 'question',
+            'questions', 'answer', 'answers', 'reply', 'replies', 'response', 'responses',
 
+            # Misc common noise
+            'etc', 'etc.', 'ok', 'okay', 'yes', 'no', 'please', 'thanks', 'thank', 'welcome',
+            'hi', 'hello', 'hey', 'bye', 'goodbye', 'more', 'less', 'much', 'little', 'bit',
+            'lot', 'lots', 'enough', 'too', 'very', 'quite', 'rather', 'pretty', 'fairly',
+            'really', 'actually', 'basically', 'generally', 'usually', 'normally', 'typically',
+            'certainly', 'definitely', 'probably', 'maybe', 'perhaps', 'possibly', 'likely',
+            'unlikely', 'sure', 'unsure', 'clear', 'unclear', 'obvious', 'apparent', 'evident',
+            'seem', 'seems', 'appear', 'appears', 'tend', 'tends', 'often', 'sometimes',
+            'always', 'never', 'rarely', 'frequently', 'occasionally', 'mostly', 'mainly',
+            'primarily', 'especially', 'particularly', 'specifically', 'exactly', 'precisely',
+            'approximately', 'roughly', 'about', 'around', 'nearly', 'almost', 'quite',
+            'rather', 'somewhat', 'fairly', 'relatively', 'comparatively', 'absolutely',
+            'completely', 'totally', 'entirely', 'fully', 'partially', 'partly', 'slightly',
+            'barely', 'hardly', 'scarcely', 'just', 'only', 'even', 'still', 'yet', 'already',
+            'again', 'also', 'too', 'well', 'so', 'such', 'thus', 'therefore', 'however',
+            'nevertheless', 'nonetheless', 'otherwise', 'instead', 'besides', 'furthermore',
+            'moreover', 'additionally', 'likewise', 'similarly', 'conversely', 'alternatively',
+            'meanwhile', 'consequently', 'accordingly', 'hence', 'thus', 'indeed', 'certainly',
+            'obviously', 'clearly', 'apparently', 'supposedly', 'allegedly', 'reportedly',
+            'seemingly', 'presumably', 'presumably', 'evidently', 'undoubtedly', 'surely',
 
-class PromotionPaymentSerializer(serializers.Serializer):
-    item_type = serializers.ChoiceField(choices=['product', 'service'])
-    item_id = serializers.IntegerField(validators=[MinValueValidator(1)])
-    promotion_duration = serializers.IntegerField(
-        default=30, 
-        validators=[MinValueValidator(1), MaxValueValidator(365)],
-        help_text="Promotion duration in days (1-365)"
-    )
+            # Location and direction (often not product-specific)
+            'here', 'there', 'everywhere', 'somewhere', 'anywhere', 'nowhere', 'left', 'right',
+            'center', 'centre', 'middle', 'front', 'back', 'side', 'sides', 'corner', 'corners',
+            'edge', 'edges', 'top', 'bottom', 'surface', 'surfaces', 'interior', 'exterior',
+            'indoor', 'outdoor', 'inside', 'outside', 'upstairs', 'downstairs', 'underground',
+            'overhead', 'nearby', 'distant', 'close', 'far', 'local', 'remote', 'public',
+            'private', 'personal', 'individual', 'collective', 'shared', 'common', 'exclusive',
+            'inclusive', 'open', 'closed', 'locked', 'unlocked', 'secured', 'unsecured',
 
+            # Colors (unless specifically relevant to product identification)
+            'colored', 'coloured', 'colorful', 'colourful', 'colorless', 'colourless', 'bright',
+            'dark', 'light', 'pale', 'vibrant', 'dull', 'faded', 'vivid', 'muted', 'neutral',
+            'transparent', 'opaque', 'translucent', 'clear', 'cloudy', 'shiny', 'matte',
+            'glossy', 'reflective', 'metallic', 'plastic', 'wooden', 'fabric', 'leather',
+            'cotton', 'silk', 'wool', 'synthetic', 'natural', 'artificial', 'fake', 'genuine',
+            'authentic', 'original', 'replica', 'copy', 'imitation', 'counterfeit',
 
-# ===========================
-#  BULK OPERATION SERIALIZERS
-# ===========================
+            # Generic material and texture descriptors
+            'smooth', 'rough', 'soft', 'hard', 'flexible', 'rigid', 'solid', 'liquid', 'gas',
+            'powder', 'crystal', 'glass', 'ceramic', 'porcelain', 'clay', 'stone', 'marble',
+            'granite', 'concrete', 'brick', 'tile', 'steel', 'iron', 'aluminum', 'copper',
+            'brass', 'bronze', 'silver', 'gold', 'platinum', 'diamond', 'pearl', 'ruby',
+            'emerald', 'sapphire', 'crystal', 'quartz',
+        }
 
-class BulkOperationSerializer(serializers.Serializer):
-    action = serializers.ChoiceField(choices=[
-        ('delete', 'Delete'),
-        ('publish', 'Publish'),
-        ('draft', 'Set to Draft'),
-        ('feature', 'Feature'),
-        ('unfeature', 'Remove Feature'),
-    ])
-    item_type = serializers.ChoiceField(choices=['products', 'services'])
-    item_ids = serializers.ListField(
-        child=serializers.IntegerField(min_value=1),
-        min_length=1,
-        max_length=100  # Limit bulk operations
-    )
-
-
-# ===========================
-#  ANALYTICS SERIALIZERS
-# ===========================
-
-class TrendingSearchSerializer(serializers.Serializer):
-    search_term = serializers.CharField()
-    search_count = serializers.IntegerField()
-    avg_results = serializers.FloatField()
-
-
-class PopularCategorySerializer(serializers.Serializer):
-    id = serializers.IntegerField()
-    name = serializers.CharField()
-    icon = serializers.CharField()
-    products_count = serializers.IntegerField()
-    services_count = serializers.IntegerField()
-    total_count = serializers.IntegerField()
-
-
-class UserDashboardSerializer(serializers.Serializer):
-    products = serializers.DictField()
-    services = serializers.DictField()
-    recent_activity = serializers.DictField()
-    performance = serializers.DictField()
-    recent_products = ProductsSerializer(many=True)
-    recent_services = ServicesSerializer(many=True)
-    favorites = UserFavoriteSerializer(many=True)
-
-
-# ===========================
-#  EXPORT SERIALIZERS
-# ===========================
-
-class ExportDataSerializer(serializers.Serializer):
-    type = serializers.ChoiceField(
-        choices=[('all', 'All'), ('products', 'Products'), ('services', 'Services'), ('ratings', 'Ratings')],
-        default='all'
-    )
-    format = serializers.ChoiceField(
-        choices=[('json', 'JSON'), ('csv', 'CSV')],
-        default='json'
-    )
+        # EXHAUSTIVE PRIORITY TERMS - Comprehensive product intelligence
+        priority_terms = {
+            # === ELECTRONICS & TECHNOLOGY ===
+            
+            # Smartphones & Mobile
+            'phone', 'smartphone', 'mobile', 'iphone', 'android', 'samsung', 'galaxy', 'note',
+            'pixel', 'huawei', 'xiaomi', 'oneplus', 'oppo', 'vivo', 'realme', 'motorola',
+            'blackberry', 'nokia', 'lg', 'htc', 'sony', 'asus', 'honor', 'redmi', 'poco',
+            'iphone15', 'iphone14', 'iphone13', 'galaxys24', 'galaxys23', 'pixel8', 'pixel7',
+            
+            # Computing & Laptops
+            'laptop', 'computer', 'desktop', 'pc', 'mac', 'macbook', 'imac', 'macpro', 'macmini',
+            'dell', 'hp', 'lenovo', 'asus', 'acer', 'msi', 'alienware', 'surface', 'thinkpad',
+            'pavilion', 'inspiron', 'latitude', 'precision', 'elitebook', 'probook', 'spectre',
+            'envy', 'omen', 'ideapad', 'thinkcentre', 'yoga', 'legion', 'vivobook', 'zenbook',
+            'rog', 'tuf', 'predator', 'nitro', 'aspire', 'swift', 'spin', 'chromebook',
+            'ultrabook', 'netbook', 'workstation', 'server', 'mainframe', 'minicomputer',
+            
+            # Tablets & E-readers
+            'tablet', 'ipad', 'ipadpro', 'ipadair', 'ipadmini', 'surface', 'kindle', 'kobo',
+            'galaxytab', 'fire', 'nook', 'remarkable', 'wacom', 'huion', 'xppen',
+            
+            # Audio & Headphones
+            'headphones', 'earphones', 'earbuds', 'airpods', 'headset', 'speaker', 'speakers',
+            'bluetooth', 'wireless', 'wired', 'noise-canceling', 'noise-cancelling', 'beats',
+            'bose', 'sony', 'sennheiser', 'audio-technica', 'jbl', 'harman', 'kardon',
+            'skullcandy', 'plantronics', 'jabra', 'anker', 'soundcore', 'marshall', 'bang',
+            'olufsen', 'klipsch', 'focal', 'grado', 'beyerdynamic', 'akg', 'shure', 'etymotic',
+            'westone', 'ultimate', 'ears', 'jaybird', 'powerbeats', 'studio', 'solo', 'pros',
+            'max', 'mini', 'homepod', 'echo', 'alexa', 'google', 'nest', 'soundbar', 'subwoofer',
+            'amplifier', 'receiver', 'turntable', 'vinyl', 'record', 'player', 'stereo', 'hifi',
+            'audiophile', 'monitor', 'studio', 'reference', 'bookshelf', 'floorstanding',
+            'portable', 'waterproof', 'rugged', 'outdoor', 'party', 'karaoke', 'microphone',
+            'mic', 'condenser', 'dynamic', 'ribbon', 'lavalier', 'shotgun', 'usb', 'xlr',
+            
+            # Gaming
+            'gaming', 'console', 'playstation', 'ps5', 'ps4', 'xbox', 'xboxseries', 'xboxone',
+            'nintendo', 'switch', 'steam', 'deck', 'gameboy', 'controller', 'joystick', 'gamepad',
+            'keyboard', 'mouse', 'mousepad', 'headset', 'chair', 'desk', 'monitor', 'graphics',
+            'card', 'gpu', 'cpu', 'processor', 'motherboard', 'ram', 'memory', 'storage', 'ssd',
+            'hdd', 'cooler', 'fan', 'case', 'power', 'supply', 'psu', 'cable', 'nvidia',
+            'amd', 'intel', 'ryzen', 'core', 'geforce', 'radeon', 'rtx', 'gtx', 'rx',
+            'corsair', 'logitech', 'razer', 'steelseries', 'hyperx', 'roccat', 'coolermaster',
+            'thermaltake', 'nzxt', 'fractal', 'phanteks', 'lianli', 'bequiet', 'seasonic',
+            'evga', 'msi', 'gigabyte', 'asrock', 'zotac', 'palit', 'gainward', 'pny',
+            'crucial', 'kingston', 'gskill', 'teamgroup', 'patriot', 'mushkin', 'ocz',
+            
+            # TV & Display
+            'television', 'tv', 'monitor', 'display', 'screen', 'led', 'oled', 'qled', 'lcd',
+            'plasma', 'projector', 'beamer', '4k', '8k', 'uhd', 'hdr', 'dolby', 'vision', 'atmos',
+            'smart', 'android', 'roku', 'firetv', 'appletv', 'chromecast', 'netflix', 'prime',
+            'hulu', 'disney', 'hbo', 'max', 'paramount', 'peacock', 'samsung', 'lg', 'sony',
+            'tcl', 'hisense', 'vizio', 'panasonic', 'philips', 'toshiba', 'sharp', 'insignia',
+            'westinghouse', 'element', 'roku', 'fire', 'curved', 'ultrawide', 'gaming',
+            'refresh', 'rate', 'hz', 'response', 'time', 'gsync', 'freesync', 'variable',
+            
+            # Cameras & Photography
+            'camera', 'dslr', 'mirrorless', 'point-and-shoot', 'compact', 'instant', 'polaroid',
+            'fuji', 'instax', 'canon', 'nikon', 'sony', 'olympus', 'panasonic', 'leica',
+            'hasselblad', 'pentax', 'ricoh', 'sigma', 'tamron', 'tokina', 'zeiss', 'lens',
+            'lenses', 'prime', 'zoom', 'macro', 'telephoto', 'wide-angle', 'fisheye',
+            'portrait', 'landscape', 'street', 'wildlife', 'sports', 'wedding', 'event',
+            'studio', 'flash', 'strobe', 'softbox', 'umbrella', 'reflector', 'diffuser',
+            'tripod', 'monopod', 'gimbal', 'stabilizer', 'drone', 'quadcopter', 'mavic',
+            'phantom', 'spark', 'mini', 'air', 'pro', 'inspire', 'matrice', 'agras',
+            'gopro', 'hero', 'session', 'max', 'action', 'sports', 'underwater', 'helmet',
+            'chest', 'mount', 'gimbal', 'karma', 'osmo', 'ronin', 'zhiyun', 'feiyutech',
+            'moza', 'pilotfly', 'ikan', 'manfrotto', 'gitzo', 'benro', 'vanguard', 'sirui',
+            
+            # Smart Home & IoT
+            'smart', 'home', 'automation', 'iot', 'hub', 'bridge', 'gateway', 'sensor',
+            'motion', 'door', 'window', 'temperature', 'humidity', 'light', 'switch',
+            'dimmer', 'plug', 'outlet', 'bulb', 'strip', 'camera', 'doorbell', 'lock',
+            'thermostat', 'smoke', 'detector', 'carbon', 'monoxide', 'water', 'leak',
+            'security', 'alarm', 'system', 'panel', 'keypad', 'remote', 'control',
+            'voice', 'assistant', 'alexa', 'google', 'siri', 'cortana', 'bixby',
+            'smartthings', 'wink', 'insteon', 'zwave', 'zigbee', 'wifi', 'mesh',
+            'router', 'extender', 'repeater', 'access', 'point', 'modem', 'gateway',
+            'netgear', 'linksys', 'asus', 'tplink', 'dlink', 'belkin', 'ubiquiti',
+            'eero', 'orbi', 'velop', 'amplifi', 'nest', 'ring', 'arlo', 'wyze',
+            'eufy', 'blink', 'reolink', 'hikvision', 'dahua', 'axis', 'bosch',
+            'honeywell', 'ecobee', 'emerson', 'white-rodgers', 'carrier', 'trane',
+            'lennox', 'york', 'goodman', 'rheem', 'bradford', 'white', 'ao', 'smith',
+            
+            # === FASHION & APPAREL ===
+            
+            # Footwear
+            'shoes', 'sneakers', 'trainers', 'runners', 'athletic', 'running', 'walking',
+            'cross-training', 'basketball', 'tennis', 'golf', 'soccer', 'football', 'baseball',
+            'hiking', 'boots', 'ankle', 'knee-high', 'thigh-high', 'rain', 'snow', 'winter',
+            'work', 'safety', 'steel-toe', 'composite-toe', 'slip-resistant', 'waterproof',
+            'insulated', 'breathable', 'leather', 'suede', 'canvas', 'mesh', 'synthetic',
+            'sandals', 'flip-flops', 'slides', 'clogs', 'mules', 'espadrilles', 'wedges',
+            'heels', 'pumps', 'stilettos', 'kitten', 'block', 'platform', 'mary-jane',
+            'oxford', 'brogue', 'derby', 'loafer', 'moccasin', 'boat', 'dress', 'casual',
+            'formal', 'business', 'professional', 'comfort', 'orthopedic', 'arch', 'support',
+            'cushioned', 'memory', 'foam', 'gel', 'air', 'zoom', 'boost', 'bounce',
+            'react', 'flyknit', 'primeknit', 'ultraboost', 'nmd', 'yeezys', 'jordans',
+            'airmax', 'airforce', 'dunk', 'blazer', 'cortez', 'pegasus', 'vaporfly',
+            'nike', 'adidas', 'puma', 'reebok', 'new', 'balance', 'asics', 'mizuno',
+            'brooks', 'saucony', 'hoka', 'altra', 'salomon', 'merrell', 'keen', 'vasque',
+            'danner', 'red', 'wing', 'timberland', 'dr', 'martens', 'clarks', 'ecco',
+            'cole', 'haan', 'johnston', 'murphy', 'allen', 'edmonds', 'florsheim',
+            'rockport', 'sketchers', 'crocs', 'ugg', 'birkenstock', 'teva', 'chacos',
+            'reef', 'havaianas', 'rainbow', 'olukai', 'allbirds', 'rothy', 'veja',
+            'golden', 'goose', 'common', 'projects', 'maison', 'margiela', 'balenciaga',
+            'gucci', 'prada', 'louis', 'vuitton', 'christian', 'louboutin', 'jimmy', 'choo',
+            'manolo', 'blahnik', 'stuart', 'weitzman', 'tory', 'burch', 'kate', 'spade',
+            'michael', 'kors', 'coach', 'steve', 'madden', 'nine', 'west', 'naturalizer',
+            'comfort', 'plus', 'easy', 'spirit', 'aerosoles', 'lifestride', 'soft', 'style',
+            
+            # Clothing - Tops
+            'shirt', 'tshirt', 't-shirt', 'blouse', 'tank', 'top', 'camisole', 'halter',
+            'tube', 'crop', 'bodysuit', 'leotard', 'polo', 'henley', 'button-down',
+            'button-up', 'dress', 'shirt', 'flannel', 'chambray', 'denim', 'oxford',
+            'poplin', 'broadcloth', 'twill', 'corduroy', 'velvet', 'silk', 'satin',
+            'chiffon', 'georgette', 'crepe', 'jersey', 'cotton', 'linen', 'wool',
+            'cashmere', 'angora', 'mohair', 'alpaca', 'bamboo', 'modal', 'tencel',
+            'rayon', 'polyester', 'nylon', 'spandex', 'elastane', 'lycra',
+            
+            # Clothing - Outerwear
+            'jacket', 'coat', 'blazer', 'cardigan', 'sweater', 'pullover', 'hoodie',
+            'sweatshirt', 'vest', 'waistcoat', 'poncho', 'cape', 'shawl', 'wrap',
+            'kimono', 'robe', 'bathrobe', 'dressing', 'gown', 'parka', 'anorak',
+            'windbreaker', 'raincoat', 'trench', 'peacoat', 'duffle', 'bomber',
+            'varsity', 'letterman', 'motorcycle', 'biker', 'leather', 'suede',
+            'shearling', 'fur', 'faux', 'down', 'puffer', 'quilted', 'padded',
+            'insulated', 'fleece', 'softshell', 'hardshell', 'gore-tex', 'waterproof',
+            'breathable', 'windproof', 'thermal', 'heated', 'ski', 'snowboard',
+            'winter', 'spring', 'summer', 'fall', 'autumn', 'all-season', 'lightweight',
+            'heavyweight', 'medium-weight', 'lined', 'unlined', 'removable', 'lining',
+            'hood', 'hooded', 'zip-up', 'zip-off', 'button-up', 'snap', 'velcro',
+            'drawstring', 'elastic', 'adjustable', 'cuff', 'hem', 'collar', 'lapel',
+            'pocket', 'pockets', 'chest', 'side', 'interior', 'hidden', 'zippered',
+            
+            # Clothing - Bottoms
+            'pants', 'trousers', 'jeans', 'denim', 'chinos', 'khakis', 'slacks',
+            'dress', 'pants', 'cargo', 'joggers', 'sweatpants', 'track', 'pants',
+            'leggings', 'tights', 'yoga', 'pants', 'athletic', 'wear', 'activewear',
+            'workout', 'clothes', 'gym', 'wear', 'sports', 'bra', 'compression',
+            'shorts', 'bermuda', 'cargo', 'board', 'swim', 'trunks', 'bikini',
+            'one-piece', 'swimsuit', 'bathing', 'suit', 'tankini', 'monokini',
+            'skirt', 'mini', 'midi', 'maxi', 'a-line', 'pencil', 'pleated',
+            'wrap', 'circle', 'flare', 'straight', 'tight', 'bodycon', 'shift',
+            'tunic', 'kaftan', 'muumuu', 'sundress', 'cocktail', 'evening',
+            'formal', 'prom', 'wedding', 'bridesmaid', 'mother-of-the-bride',
+            'mother-of-the-groom', 'flower', 'girl', 'junior', 'bridesmaid',
+            'maid-of-honor', 'matron-of-honor', 'guest', 'outfit', 'ensemble',
+            'coordinates', 'separates', 'set', 'matching', 'suit', 'pantsuit',
+            'skirt', 'suit', 'business', 'professional', 'work', 'office',
+            'casual', 'smart', 'casual', 'business', 'casual', 'dressy', 'casual',
+            
+            # Undergarments & Intimates
+            'underwear', 'panties', 'briefs', 'boxers', 'boxer-briefs', 'trunks',
+            'thong', 'g-string', 'boyshorts', 'hipsters', 'bikini', 'briefs',
+            'high-waisted', 'low-rise', 'mid-rise', 'seamless', 'lace', 'satin',
+            'cotton', 'modal', 'bamboo', 'silk', 'microfiber', 'mesh', 'sheer',
+            'opaque', 'control', 'shapewear', 'spanx', 'corset', 'bustier',
+            'camisole', 'slip', 'chemise', 'nightgown', 'negligee', 'babydoll',
+            'teddy', 'bodysuit', 'bra', 'bras', 'push-up', 'padded', 'underwire',
+            'wireless', 'bralette', 'sports', 'bra', 'nursing', 'bra', 'maternity',
+            'bra', 'strapless', 'backless', 'convertible', 'adhesive', 'stick-on',
+            'pasties', 'nipple', 'covers', 'petticoat', 'crinoline', 'bustle',
+            'girdle', 'garter', 'belt', 'stockings', 'pantyhose', 'tights',
+            'thigh-highs', 'knee-highs', 'ankle', 'socks', 'crew', 'socks',
+            'dress', 'socks', 'athletic', 'socks', 'running', 'socks', 'hiking',
+            'socks', 'wool', 'socks', 'cotton', 'socks', 'bamboo', 'socks',
+            'compression', 'socks', 'diabetic', 'socks', 'no-show', 'socks',
+            'invisible', 'socks', 'liner', 'socks', 'boat', 'socks', 'loafer',
+            
+            # Accessories - Bags & Luggage
+            'bag', 'bags', 'handbag', 'purse', 'clutch', 'wallet', 'wristlet',
+            'crossbody', 'shoulder', 'tote', 'satchel', 'hobo', 'bucket', 'saddle',
+            'doctor', 'carpet', 'bowling', 'duffle', 'weekender', 'overnight',
+            'travel', 'luggage', 'suitcase', 'carry-on', 'checked', 'hardside',
+            'softside', 'spinner', 'wheeled', 'rolling', 'garment', 'backpack',
+            'daypack', 'hiking', 'school', 'laptop', 'messenger', 'briefcase',
+            'attache', 'portfolio', 'organizer', 'cosmetic', 'toiletry', 'makeup',
+            'jewelry', 'watch', 'case', 'holder', 'stand', 'display', 'storage',
+            'organizer', 'drawer', 'cabinet', 'armoire', 'chest', 'box', 'safe',
+            'leather', 'canvas', 'nylon', 'polyester', 'vinyl', 'faux', 'genuine',
+            'designer', 'luxury', 'high-end', 'affordable', 'budget', 'discount',
+            'outlet', 'clearance', 'sale', 'vintage', 'retro', 'classic', 'modern',
+            'contemporary', 'trendy', 'fashionable', 'stylish', 'chic', 'elegant',
+            'sophisticated', 'casual', 'formal', 'business', 'professional', 'work',
+            'everyday', 'weekend', 'vacation', 'travel', 'beach', 'pool', 'resort',
+            
+            # Jewelry & Watches
+            'jewelry', 'jewellery', 'necklace', 'pendant', 'chain', 'choker',
+            'collar', 'bib', 'statement', 'delicate', 'fine', 'costume', 'fashion',
+            'earrings', 'studs', 'hoops', 'dangles', 'drops', 'chandeliers',
+            'climbers', 'cuffs', 'huggies', 'threaders', 'jackets', 'posts',
+            'hooks', 'leverbacks', 'screw-backs', 'clip-on', 'magnetic',
+            'bracelet', 'bangles', 'cuffs', 'tennis', 'charm', 'link', 'chain',
+            'beaded', 'leather', 'rope', 'cord', 'elastic', 'stretch', 'rigid',
+            'hinged', 'adjustable', 'stackable', 'layering', 'set', 'matching',
+            'ring', 'rings', 'engagement', 'wedding', 'band', 'anniversary',
+            'eternity', 'promise', 'class', 'signet', 'cocktail', 'statement',
+            'stackable', 'midi', 'knuckle', 'pinky', 'thumb', 'toe', 'adjustable',
+            'brooch', 'pin', 'lapel', 'scarf', 'hat', 'hair', 'clip', 'barrette',
+            'headband', 'tiara', 'crown', 'circlet', 'diadem', 'fascinator',
+            'watch', 'watches', 'smartwatch', 'fitness', 'tracker', 'activity',
+            'monitor', 'heart', 'rate', 'step', 'counter', 'sleep', 'tracker',
+            'gps', 'waterproof', 'swim-proof', 'diving', 'sports', 'luxury',
+            'dress', 'casual', 'digital', 'analog', 'hybrid', 'automatic',
+            'mechanical', 'quartz', 'solar', 'kinetic', 'chronograph', 'stopwatch',
+            'timer', 'alarm', 'date', 'day', 'moon', 'phase', 'perpetual',
+            'calendar', 'world', 'time', 'dual', 'multiple', 'timezone',
+            'stainless', 'steel', 'titanium', 'ceramic', 'carbon', 'fiber',
+            'gold', 'silver', 'platinum', 'rose', 'gold', 'yellow', 'white',
+            'two-tone', 'plated', 'filled', 'solid', 'hollow', 'mesh', 'milanese',
+            'leather', 'rubber', 'silicone', 'nylon', 'nato', 'deployment',
+            'clasp', 'buckle', 'fold-over', 'push-button', 'magnetic', 'velcro',
+            'apple', 'watch', 'samsung', 'galaxy', 'garmin', 'fitbit', 'polar',
+            'suunto', 'casio', 'gshock', 'citizen', 'seiko', 'orient', 'invicta',
+            'fossil', 'skagen', 'diesel', 'armani', 'michael', 'kors', 'kate',
+            'spade', 'marc', 'jacobs', 'tory', 'burch', 'coach', 'movado',
+            'tissot', 'hamilton', 'mido', 'certina', 'longines', 'omega',
+            'breitling', 'tag', 'heuer', 'rolex', 'tudor', 'patek', 'philippe',
+            'audemars', 'piguet', 'vacheron', 'constantin', 'jaeger', 'lecoultre',
+            'iwc', 'panerai', 'cartier', 'bulgari', 'chanel', 'hermes', 'dior',
+            'louis', 'vuitton', 'gucci', 'prada', 'versace', 'armani', 'dolce',
+            'gabbana', 'valentino', 'givenchy', 'saint', 'laurent', 'celine',
+            'balenciaga', 'bottega', 'veneta', 'fendi', 'loewe', 'chloe',
+            'isabel', 'marant', 'stella', 'mccartney', 'alexander', 'mcqueen',
+            'tom', 'ford', 'ralph', 'lauren', 'calvin', 'klein', 'tommy',
+            'hilfiger', 'lacoste', 'hugo', 'boss', 'burberry', 'barbour',
+            
+            # === AUTOMOTIVE ===
+            
+            # Vehicle Types
+            'car', 'cars', 'automobile', 'vehicle', 'sedan', 'coupe', 'hatchback',
+            'wagon', 'suv', 'crossover', 'cuv', 'minivan', 'van', 'truck',
+            'pickup', 'convertible', 'roadster', 'sports', 'luxury', 'economy',
+            'compact', 'midsize', 'full-size', 'subcompact', 'electric', 'hybrid',
+            'plug-in', 'hydrogen', 'fuel', 'cell', 'gasoline', 'diesel', 'turbo',
+            'supercharged', 'naturally', 'aspirated', 'manual', 'automatic', 'cvt',
+            'awd', 'fwd', 'rwd', '4wd', 'four-wheel', 'drive', 'all-wheel',
+            'front-wheel', 'rear-wheel', 'traction', 'control', 'stability',
+            'abs', 'airbags', 'safety', 'crash', 'test', 'iihs', 'nhtsa',
+            'five-star', 'top', 'safety', 'pick', 'award', 'winner',
+            
+            # Car Brands
+            'toyota', 'honda', 'nissan', 'mazda', 'subaru', 'mitsubishi', 'lexus',
+            'infiniti', 'acura', 'hyundai', 'kia', 'genesis', 'ford', 'chevrolet',
+            'chevy', 'gmc', 'cadillac', 'buick', 'lincoln', 'chrysler', 'dodge',
+            'jeep', 'ram', 'fiat', 'alfa', 'romeo', 'maserati', 'ferrari',
+            'lamborghini', 'aston', 'martin', 'bentley', 'rolls', 'royce',
+            'jaguar', 'land', 'rover', 'mini', 'bmw', 'mercedes', 'benz',
+            'audi', 'volkswagen', 'vw', 'porsche', 'volvo', 'saab', 'peugeot',
+            'citroen', 'renault', 'skoda', 'seat', 'opel', 'vauxhall', 'tesla',
+            'lucid', 'rivian', 'fisker', 'canoo', 'lordstown', 'nikola', 'workhorse',
+            
+            # Car Models (Popular ones)
+            'camry', 'corolla', 'prius', 'rav4', 'highlander', 'sienna', 'tacoma',
+            'tundra', '4runner', 'sequoia', 'landcruiser', 'lexusrx', 'lexuses',
+            'lexusgs', 'lexusis', 'lexusls', 'civic', 'accord', 'crv', 'pilot',
+            'odyssey', 'ridgeline', 'passport', 'hrv', 'insight', 'clarity',
+            'altima', 'sentra', 'maxima', 'rogue', 'murano', 'pathfinder',
+            'armada', 'titan', 'frontier', 'leaf', 'ariya', 'cx5', 'cx9',
+            'mazda3', 'mazda6', 'mx5', 'miata', 'cx30', 'cx50', 'outback',
+            'forester', 'ascent', 'legacy', 'impreza', 'wrx', 'sti', 'brz',
+            'crosstrek', 'elantra', 'sonata', 'tucson', 'santa', 'fe', 'palisade',
+            'genesis', 'g90', 'gv70', 'gv80', 'forte', 'optima', 'k5', 'sorento',
+            'telluride', 'sportage', 'stinger', 'soul', 'rio', 'niro', 'ev6',
+            'mustang', 'f150', 'explorer', 'escape', 'edge', 'expedition',
+            'navigator', 'aviator', 'corsair', 'nautilus', 'mkz', 'continental',
+            'silverado', 'equinox', 'tahoe', 'suburban', 'traverse', 'malibu',
+            'impala', 'camaro', 'corvette', 'bolt', 'volt', 'sierra', 'acadia',
+            'terrain', 'yukon', 'canyon', 'escalade', 'xt4', 'xt5', 'xt6',
+            'ct4', 'ct5', 'enclave', 'encore', 'envision', 'lacrosse', 'regal',
+            'pacifica', 'voyager', '300', 'charger', 'challenger', 'durango',
+            'journey', 'grand', 'caravan', 'wrangler', 'grand', 'cherokee',
+            'cherokee', 'compass', 'renegade', 'gladiator', '1500', '2500',
+            '3500', 'promaster', 'model3', 'models', 'modelx', 'modely',
+            'cybertruck', 'roadster', 'semi', 'plaid', 'performance', 'long',
+            'range', 'standard', 'plus', 'dual', 'motor', 'tri', 'motor',
+            
+            # Motorcycle & Powersports
+            'motorcycle', 'bike', 'motorbike', 'scooter', 'moped', 'atv', 'utv',
+            'side-by-side', 'dirt', 'bike', 'enduro', 'motocross', 'mx', 'supermoto',
+            'dual', 'sport', 'adventure', 'touring', 'cruiser', 'chopper', 'bobber',
+            'cafe', 'racer', 'naked', 'streetfighter', 'superbike', 'sportbike',
+            'standard', 'commuter', 'electric', 'scooter', 'vespa', 'piaggio',
+            'yamaha', 'honda', 'kawasaki', 'suzuki', 'ducati', 'bmw', 'ktm',
+            'husqvarna', 'aprilia', 'moto', 'guzzi', 'triumph', 'harley',
+            'davidson', 'indian', 'victory', 'polaris', 'can-am', 'spyder',
+            'ryker', 'ranger', 'rzr', 'general', 'maverick', 'outlander',
+            'renegade', 'commander', 'defender', 'pioneer', 'talon', 'wolverine',
+            'grizzly', 'kodiak', 'raptor', 'yfz', 'banshee', 'blaster', 'warrior',
+            'trx', 'fourtrax', 'rancher', 'foreman', 'rubicon', 'rincon',
+            'ninja', 'zx', 'z900', 'z650', 'versys', 'klr', 'klx', 'kx',
+            'hayabusa', 'gsxr', 'vstrom', 'sv650', 'rmz', 'drz', 'ltz',
+            'yzf', 'r1', 'r6', 'r3', 'fz', 'mt', 'tenere', 'wr', 'yz',
+            'ttr', 'tw', 'sr', 'xsr', 'vmax', 'bolt', 'viking', 'wolverine',
+            'panigale', 'monster', 'multistrada', 'diavel', 'scrambler', 'supersport',
+            'streetfighter', 'hypermotard', 'hyperstrada', 'xdiavel', 's1000rr',
+            's1000r', 's1000xr', 'f800', 'f700', 'f650', 'r1200', 'r1250',
+            'gs', 'gsa', 'rt', 'r', 'k1600', 'c400', 'c650', 'g310',
+            'duke', 'rc', 'adventure', 'enduro', 'freeride', 'sx', 'exc',
+            'xc', 'xcf', 'xcw', 'tpi', 'factory', 'edition', 'six', 'days',
+            
+            # Auto Parts & Accessories
+            'parts', 'accessories', 'engine', 'motor', 'transmission', 'clutch',
+            'brake', 'brakes', 'pads', 'rotors', 'calipers', 'master', 'cylinder',
+            'booster', 'fluid', 'lines', 'hoses', 'suspension', 'shocks',
+            'struts', 'springs', 'coilovers', 'sway', 'bar', 'bushings',
+            'control', 'arms', 'tie', 'rods', 'ball', 'joints', 'wheel',
+            'bearing', 'hub', 'assembly', 'cv', 'joint', 'axle', 'differential',
+            'driveshaft', 'u-joint', 'transfer', 'case', 'exhaust', 'muffler',
+            'catalytic', 'converter', 'headers', 'downpipe', 'catback',
+            'turboback', 'intake', 'air', 'filter', 'cold', 'short', 'ram',
+            'throttle', 'body', 'mass', 'airflow', 'sensor', 'maf', 'map',
+            'oxygen', 'sensor', 'o2', 'lambda', 'fuel', 'injector', 'pump',
+            'pressure', 'regulator', 'rail', 'tank', 'sending', 'unit',
+            'gauge', 'level', 'cap', 'filler', 'neck', 'evap', 'canister',
+            'purge', 'valve', 'ignition', 'spark', 'plug', 'wire', 'coil',
+            'distributor', 'rotor', 'cap', 'points', 'condenser', 'timing',
+            'belt', 'chain', 'tensioner', 'guide', 'water', 'pump', 'thermostat',
+            'radiator', 'cooling', 'fan', 'shroud', 'hose', 'clamp', 'reservoir',
+            'overflow', 'tank', 'coolant', 'antifreeze', 'oil', 'filter', 'pan',
+            'drain', 'plug', 'gasket', 'seal', 'ring', 'valve', 'cover',
+            'head', 'gasket', 'intake', 'manifold', 'exhaust', 'egr', 'pcv',
+            'crankcase', 'ventilation', 'breather', 'dipstick', 'tube', 'filler',
+            'alternator', 'starter', 'battery', 'terminal', 'cable', 'relay',
+            'fuse', 'fusebox', 'wiring', 'harness', 'connector', 'switch',
+            'sensor', 'module', 'computer', 'ecu', 'pcm', 'bcm', 'tcm',
+            'abs', 'airbag', 'srs', 'obd', 'diagnostic', 'scanner', 'code',
+            'reader', 'multimeter', 'test', 'light', 'probe', 'jumper',
+            'wire', 'crimp', 'tool', 'socket', 'wrench', 'ratchet', 'extension',
+            'universal', 'joint', 'adapter', 'torque', 'wrench', 'impact',
+            'gun', 'air', 'compressor', 'pneumatic', 'hydraulic', 'jack',
+            'jackstand', 'ramp', 'lift', 'creeper', 'dolly', 'puller',
+            'press', 'bearing', 'installer', 'remover', 'separator', 'pickle',
+            'fork', 'spring', 'compressor', 'strut', 'mount', 'tool',
+            'brake', 'bleeder', 'vacuum', 'pump', 'pressure', 'tester',
+            'compression', 'leak', 'down', 'cylinder', 'leakage', 'cooling',
+            'system', 'pressure', 'tester', 'radiator', 'cap', 'tester',
+            'thermostat', 'housing', 'water', 'neck', 'outlet', 'inlet',
+            'heater', 'core', 'evaporator', 'condenser', 'compressor',
+            'accumulator', 'receiver', 'drier', 'expansion', 'valve',
+            'orifice', 'tube', 'refrigerant', 'r134a', 'r1234yf', 'manifold',
+            'gauge', 'set', 'vacuum', 'pump', 'leak', 'detector', 'dye',
+            'sealant', 'stop', 'leak', 'flush', 'cleaner', 'degreaser',
+            'penetrating', 'oil', 'wd40', 'pb', 'blaster', 'liquid', 'wrench',
+            'kroil', 'aerokroil', 'mouse', 'milk', 'corrosion', 'inhibitor',
+            'rust', 'converter', 'primer', 'paint', 'touch', 'up', 'spray',
+            'can', 'brush', 'roller', 'masking', 'tape', 'newspaper',
+            'plastic', 'sheeting', 'drop', 'cloth', 'tack', 'rag',
+            'microfiber', 'towel', 'chamois', 'synthetic', 'natural',
+            'waffle', 'weave', 'plush', 'terry', 'cloth', 'cotton',
+            'lint-free', 'disposable', 'shop', 'rag', 'paper', 'towel',
+            'absorbent', 'mat', 'spill', 'kit', 'oil', 'dry', 'kitty',
+            'litter', 'sand', 'sawdust', 'cardboard', 'plastic', 'drip',
+            'pan', 'funnel', 'wide', 'mouth', 'long', 'neck', 'flexible',
+            'spout', 'measuring', 'cup', 'graduated', 'cylinder', 'syringe',
+            'turkey', 'baster', 'pipette', 'dropper', 'squeeze', 'bottle',
+            
+            # Tires & Wheels
+            'tire', 'tires', 'tyre', 'tyres', 'wheel', 'wheels', 'rim', 'rims',
+            'alloy', 'steel', 'chrome', 'painted', 'machined', 'polished',
+            'black', 'white', 'silver', 'gray', 'grey', 'gold', 'bronze',
+            'gunmetal', 'anthracite', 'hyper', 'dark', 'gloss', 'matte',
+            'satin', 'brushed', 'forged', 'cast', 'flow-formed', 'spun',
+            'one-piece', 'two-piece', 'three-piece', 'multi-piece', 'modular',
+            'beadlock', 'racing', 'street', 'drag', 'autocross', 'track',
+            'daily', 'driver', 'show', 'custom', 'aftermarket', 'oem',
+            'factory', 'replacement', 'upgrade', 'plus', 'sizing', 'staggered',
+            'square', 'setup', 'directional', 'non-directional', 'asymmetric',
+            'symmetric', 'radial', 'bias', 'ply', 'tubeless', 'tube', 'type',
+            'run-flat', 'self-supporting', 'extended', 'mobility', 'tire',
+            'pressure', 'monitoring', 'system', 'tpms', 'sensor', 'valve',
+            'stem', 'cap', 'core', 'tool', 'gauge', 'digital', 'analog',
+            'stick', 'dial', 'pencil', 'inflator', 'pump', 'portable',
+            'cordless', 'rechargeable', '12v', 'cigarette', 'lighter',
+            'all-season', 'summer', 'winter', 'snow', 'ice', 'studded',
+            'studdable', 'performance', 'ultra-high', 'max', 'touring',
+            'grand', 'passenger', 'light', 'truck', 'lt', 'commercial',
+            'trailer', 'st', 'special', 'motorcycle', 'atv', 'utv',
+            'golf', 'cart', 'lawn', 'mower', 'wheelbarrow', 'hand',
+            'truck', 'dolly', 'caster', 'pneumatic', 'solid', 'foam',
+            'filled', 'flat', 'free', 'puncture', 'proof', 'tubeless',
+            'michelin', 'bridgestone', 'goodyear', 'continental', 'pirelli',
+            'dunlop', 'yokohama', 'toyo', 'nitto', 'bf', 'goodrich',
+            'cooper', 'hankook', 'kumho', 'falken', 'nexen', 'general',
+            'uniroyal', 'firestone', 'kelly', 'mastercraft', 'starfire',
+            'douglas', 'summit', 'hercules', 'ironman', 'westlake',
+            'atturo', 'lexani', 'vogue', 'coker', 'american', 'classic',
+            'diamond', 'back', 'specialty', 'vintage', 'redline', 'whitewall',
+            'raised', 'letter', 'gold', 'line', 'pinstripe', 'sidewall',
+            
+            # === HOME & FURNITURE ===
+            
+            # Living Room Furniture
+            'furniture', 'sofa', 'couch', 'sectional', 'loveseat', 'chair', 'armchair',
+            'recliner', 'rocker', 'glider', 'ottoman', 'footstool', 'bench', 'stool',
+            'coffee', 'table', 'end', 'side', 'accent', 'console', 'tv', 'stand',
+            'entertainment', 'center', 'media', 'cabinet', 'bookshelf', 'bookcase',
+            'shelving', 'unit', 'display', 'case', 'curio', 'china', 'hutch',
+            'buffet', 'sideboard', 'credenza', 'storage', 'chest', 'trunk',
+            'basket', 'bin', 'organizer', 'rack', 'holder', 'stand', 'tree',
+            
+            # Bedroom Furniture
+            'bed', 'mattress', 'box', 'spring', 'foundation', 'platform', 'frame',
+            'headboard', 'footboard', 'rails', 'slats', 'support', 'center',
+            'nightstand', 'bedside', 'table', 'dresser', 'chest', 'drawers',
+            'armoire', 'wardrobe', 'closet', 'organizer', 'system', 'mirror',
+            'vanity', 'makeup', 'table', 'stool', 'bench', 'trunk', 'hope',
+            'chest', 'blanket', 'box', 'storage', 'under', 'bed', 'over',
+            'door', 'hanging', 'shoe', 'rack', 'jewelry', 'box', 'organizer',
+            
+            # Dining Room Furniture
+            'dining', 'table', 'chair', 'set', 'bench', 'banquette', 'booth',
+            'bar', 'stool', 'counter', 'height', 'pub', 'bistro', 'cafe',
+            'breakfast', 'nook', 'kitchen', 'island', 'cart', 'trolley',
+            'server', 'serving', 'buffet', 'sideboard', 'hutch', 'china',
+            'cabinet', 'wine', 'rack', 'cellar', 'cooler', 'refrigerator',
+            'bar', 'cart', 'liquor', 'cabinet', 'glass', 'rack', 'stemware',
+            
+            # Office Furniture
+            'desk', 'office', 'chair', 'executive', 'task', 'ergonomic', 'gaming',
+            'computer', 'writing', 'secretary', 'roll-top', 'corner', 'l-shaped',
+            'u-shaped', 'standing', 'adjustable', 'height', 'sit-stand',
+            'converter', 'riser', 'monitor', 'arm', 'mount', 'keyboard',
+            'tray', 'drawer', 'slider', 'cpu', 'holder', 'tower', 'stand',
+            'filing', 'cabinet', 'file', 'folder', 'hanging', 'legal',
+            'letter', 'size', 'lateral', 'vertical', 'mobile', 'pedestal',
+            'bookcase', 'shelving', 'storage', 'cabinet', 'locker', 'safe',
+            'fireproof', 'waterproof', 'security', 'lock', 'key', 'combination',
+            'digital', 'biometric', 'fingerprint', 'scanner', 'access',
+            
+            # Outdoor & Patio Furniture
+            'outdoor', 'patio', 'garden', 'lawn', 'deck', 'balcony', 'porch',
+            'gazebo', 'pergola', 'arbor', 'trellis', 'lattice', 'privacy',
+            'screen', 'windscreen', 'shade', 'sail', 'canopy', 'awning',
+            'umbrella', 'parasol', 'market', 'cantilever', 'offset', 'tilt',
+            'crank', 'pulley', 'push', 'button', 'auto', 'open', 'close',
+            'dining', 'set', 'bistro', 'pub', 'bar', 'lounge', 'seating',
+            'conversation', 'sectional', 'modular', 'wicker', 'rattan',
+            'resin', 'plastic', 'aluminum', 'steel', 'iron', 'wood', 'teak',
+            'eucalyptus', 'acacia', 'cedar', 'pine', 'fir', 'redwood',
+            'recycled', 'composite', 'poly', 'lumber', 'maintenance', 'free',
+            'weather', 'resistant', 'fade', 'rust', 'proof', 'waterproof',
+            'cushion', 'pillow', 'pad', 'cover', 'outdoor', 'fabric',
+            'sunbrella', 'solution', 'dyed', 'fade', 'resistant', 'mildew',
+            'stain', 'water', 'repellent', 'quick', 'dry', 'foam', 'filling',
+            'fire', 'pit', 'table', 'bowl', 'ring', 'screen', 'cover',
+            'poker', 'tool', 'set', 'log', 'grate', 'ash', 'pan', 'wood',
+            'burning', 'gas', 'propane', 'natural', 'gel', 'fuel', 'ethanol',
+            'bio', 'electric', 'infrared', 'heater', 'patio', 'outdoor',
+            'tower', 'tabletop', 'wall', 'mounted', 'ceiling', 'hanging',
+            'pendant', 'chandelier', 'lantern', 'string', 'lights', 'solar',
+            'led', 'battery', 'operated', 'plugin', 'hardwired', 'dimmer',
+            'timer', 'remote', 'control', 'smart', 'wifi', 'app', 'controlled',
+            
+            # Kitchen Appliances & Equipment
+            'kitchen', 'appliance', 'refrigerator', 'fridge', 'freezer', 'ice',
+            'maker', 'water', 'dispenser', 'filter', 'french', 'door', 'side',
+            'by', 'top', 'bottom', 'counter', 'depth', 'built-in', 'integrated',
+            'panel', 'ready', 'stainless', 'steel', 'black', 'white', 'slate',
+            'bisque', 'almond', 'red', 'blue', 'retro', 'vintage', 'modern',
+            'contemporary', 'traditional', 'transitional', 'industrial', 'farmhouse',
+            'range', 'stove', 'cooktop', 'oven', 'wall', 'double', 'single',
+            'convection', 'conventional', 'steam', 'combination', 'microwave',
+            'gas', 'electric', 'induction', 'radiant', 'coil', 'glass', 'ceramic',
+            'burner', 'element', 'grill', 'griddle', 'wok', 'ring', 'simmer',
+            'power', 'boil', 'melt', 'warm', 'proof', 'sabbath', 'mode',
+            'self-cleaning', 'continuous', 'clean', 'easy', 'clean', 'pyrolytic',
+            'catalytic', 'steam', 'clean', 'dishwasher', 'portable', 'countertop',
+            'drawer', 'style', 'third', 'rack', 'cutlery', 'tray', 'adjustable',
+            'fold', 'down', 'tines', 'wash', 'cycle', 'rinse', 'aid', 'dispenser',
+            'garbage', 'disposal', 'waste', 'disposer', 'continuous', 'feed',
+            'batch', 'septic', 'safe', 'jam', 'proof', 'sound', 'insulation',
+            'anti-vibration', 'mount', 'air', 'switch', 'wall', 'cover', 'plate',
+            'hood', 'range', 'exhaust', 'fan', 'ventilation', 'ducted', 'ductless',
+            'recirculating', 'convertible', 'under', 'cabinet', 'wall', 'mount',
+            'island', 'downdraft', 'pop', 'up', 'telescoping', 'baffle', 'filter',
+            'mesh', 'charcoal', 'carbon', 'grease', 'led', 'halogen', 'light',
+            'heat', 'lamp', 'variable', 'speed', 'boost', 'delay', 'off',
+            'auto', 'on', 'sensor', 'cooking', 'blender', 'food', 'processor',
+            'mixer', 'stand', 'hand', 'immersion', 'stick', 'juicer', 'extractor',
+            'slow', 'masticating', 'centrifugal', 'citrus', 'reamer', 'press',
+            'coffee', 'maker', 'espresso', 'machine', 'grinder', 'burr', 'blade',
+            'french', 'press', 'pour', 'over', 'drip', 'percolator', 'moka',
+            'pot', 'aeropress', 'chemex', 'v60', 'kalita', 'wave', 'clever',
+            'dripper', 'siphon', 'vacuum', 'cold', 'brew', 'nitro', 'capsule',
+            'pod', 'nespresso', 'keurig', 'k-cup', 'tassimo', 't-disc',
+            'dolce', 'gusto', 'lavazza', 'illy', 'single', 'serve', 'programmable',
+            'thermal', 'carafe', 'glass', 'plate', 'warmer', 'auto', 'shut',
+            'off', 'brew', 'strength', 'control', 'water', 'level', 'indicator',
+            'permanent', 'filter', 'gold', 'tone', 'paper', 'toaster', 'oven',
+            'convection', 'rotisserie', 'air', 'fry', 'dehydrate', 'bake',
+            'broil', 'toast', 'reheat', 'keep', 'warm', 'defrost', 'timer',
+            'digital', 'display', 'preset', 'function', 'recipe', 'book',
+            'crumb', 'tray', 'removable', 'non-stick', 'interior', 'stainless',
+            'steel', 'exterior', 'cool', 'touch', 'handle', 'door', 'tempered',
+            'glass', 'viewing', 'window', 'interior', 'light', 'slide', 'out',
+            'rack', 'baking', 'pan', 'broiling', 'drip', 'tray', 'rotisserie',
+            'spit', 'fork', 'lifter', 'tool', 'air', 'fryer', 'oil-free',
+            'healthy', 'cooking', 'rapid', 'circulation', 'technology', 'basket',
+            'divider', 'separator', 'shake', 'reminder', 'preheat', 'indicator',
+            'recipe', 'app', 'cookbook', 'accessories', 'cake', 'pan', 'muffin',
+            'tin', 'pizza', 'stone', 'crisper', 'tray', 'silicone', 'mat',
+            
+            # Kitchen Cookware & Bakeware
+            'cookware', 'bakeware', 'pot', 'pan', 'skillet', 'frying', 'saute',
+            'sauce', 'stock', 'soup', 'pasta', 'steamer', 'insert', 'double',
+            'boiler', 'roasting', 'dutch', 'oven', 'casserole', 'dish', 'tagine',
+            'wok', 'paella', 'crepe', 'pancake', 'griddle', 'grill', 'press',
+            'panini', 'waffle', 'maker', 'iron', 'egg', 'poacher', 'omelet',
+            'copper', 'stainless', 'steel', 'aluminum', 'cast', 'iron', 'carbon',
+            'ceramic', 'enamel', 'non-stick', 'teflon', 'pfoa', 'free', 'green',
+            'pan', 'granite', 'stone', 'marble', 'hard', 'anodized', 'tri-ply',
+            'multi-ply', 'clad', 'core', 'induction', 'compatible', 'oven', 'safe',
+            'dishwasher', 'freezer', 'microwave', 'broiler', 'heat', 'resistant',
+            'scratch', 'resistant', 'easy', 'release', 'clean', 'riveted',
+            'welded', 'stay', 'cool', 'handle', 'grip', 'silicone', 'cover',
+            'ergonomic', 'comfortable', 'balanced', 'weight', 'distribution',
+            'even', 'heating', 'hot', 'spot', 'warping', 'professional',
+            'commercial', 'grade', 'restaurant', 'quality', 'chef', 'endorsed',
+            'all-clad', 'calphalon', 'cuisinart', 'kitchenaid', 'anolon',
+            'circulon', 'rachael', 'ray', 'paula', 'deen', 'pioneer', 'woman',
+            'martha', 'stewart', 'emeril', 'lagasse', 'wolfgang', 'puck',
+            'gordon', 'ramsay', 'bobby', 'flay', 'guy', 'fieri', 'giada',
+            'de', 'laurentiis', 'ina', 'garten', 'barefoot', 'contessa',
+            'baking', 'sheet', 'cookie', 'jelly', 'roll', 'half', 'quarter',
+            'eighth', 'rimmed', 'rimless', 'perforated', 'insulated', 'air',
+            'cushioned', 'aluminum', 'steel', 'silicone', 'silpat', 'mat',
+            'parchment', 'paper', 'wax', 'foil', 'plastic', 'wrap', 'food',
+            'storage', 'container', 'airtight', 'leak', 'proof', 'microwave',
+            'freezer', 'bpa', 'free', 'glass', 'pyrex', 'anchor', 'hocking',
+            'rubbermaid', 'tupperware', 'oxo', 'pop', 'lock', 'sistema',
+            'snapware', 'glad', 'ziploc', 'reynolds', 'hefty', 'saran',
+            'cake', 'pan', 'round', 'square', 'rectangular', 'loaf', 'bread',
+            'bundt', 'tube', 'angel', 'food', 'springform', 'cheesecake',
+            'tart', 'quiche', 'pie', 'plate', 'muffin', 'tin', 'cupcake',
+            'mini', 'jumbo', 'standard', 'popover', 'yorkshire', 'pudding',
+            'madeline', 'shell', 'scallop', 'financier', 'cannoli', 'donut',
+            'doughnut', 'bagel', 'pretzel', 'cookie', 'cutter', 'stamp',
+            'press', 'rolling', 'pin', 'marble', 'wood', 'silicone', 'adjustable',
+            'thickness', 'guide', 'ring', 'pastry', 'brush', 'natural',
+            'bristle', 'synthetic', 'heat', 'resistant', 'dishwasher', 'safe',
+            'measuring', 'cup', 'spoon', 'set', 'liquid', 'dry', 'ingredient',
+            'nested', 'stacking', 'magnetic', 'snap', 'together', 'collapsible',
+            'adjustable', 'digital', 'scale', 'kitchen', 'food', 'gram', 'ounce',
+            'pound', 'kilogram', 'milliliter', 'fluid', 'ounce', 'cup', 'pint',
+            'quart', 'gallon', 'liter', 'tare', 'function', 'zero', 'out',
+            'unit', 'conversion', 'timer', 'temperature', 'probe', 'wireless',
+            'bluetooth', 'app', 'connected', 'smart', 'notification', 'alert',
+            
+            # Small Kitchen Appliances
+            'blender', 'vitamix', 'blendtec', 'ninja', 'nutribullet', 'magic',
+            'bullet', 'oster', 'hamilton', 'beach', 'black', 'decker',
+            'immersion', 'stick', 'hand', 'personal', 'single', 'serve',
+            'smoothie', 'maker', 'protein', 'shake', 'ice', 'crusher',
+            'frozen', 'fruit', 'vegetable', 'soup', 'sauce', 'puree',
+            'baby', 'food', 'nut', 'butter', 'grind', 'mill', 'powder',
+            'variable', 'speed', 'pulse', 'preset', 'program', 'auto',
+            'clean', 'self', 'cleaning', 'dishwasher', 'safe', 'parts',
+            'bpa', 'free', 'tritan', 'pitcher', 'jar', 'cup', 'to-go',
+            'travel', 'lid', 'spout', 'pour', 'non-slip', 'base', 'suction',
+            'feet', 'cord', 'storage', 'wrap', 'power', 'base', 'motor',
+            'horsepower', 'watts', 'rpm', 'blade', 'stainless', 'steel',
+            'sharp', 'durable', 'replaceable', 'food', 'processor', 'chopper',
+            'slicer', 'shredder', 'grater', 'julienne', 'disc', 'attachment',
+            'work', 'bowl', 'feed', 'tube', 'pusher', 'lid', 'lock',
+            'safety', 'interlock', 'system', 'overload', 'protection',
+            'thermal', 'shutoff', 'reset', 'button', 'recipe', 'book',
+            'instruction', 'manual', 'warranty', 'registration', 'card',
+            'customer', 'service', 'support', 'parts', 'replacement',
+            'repair', 'troubleshooting', 'guide', 'faq', 'frequently',
+            'asked', 'questions', 'tips', 'tricks', 'techniques', 'video',
+            'tutorial', 'demonstration', 'online', 'resource', 'website',
+            'social', 'media', 'facebook', 'instagram', 'youtube', 'pinterest',
+            'twitter', 'blog', 'newsletter', 'email', 'subscription',
+            'notification', 'update', 'new', 'product', 'launch', 'promotion',
+            'sale', 'discount', 'coupon', 'rebate', 'cashback', 'reward',
+            'loyalty', 'program', 'membership', 'exclusive', 'offer',
+            'limited', 'time', 'while', 'supplies', 'last', 'first',
+            'come', 'served', 'basis', 'terms', 'conditions', 'apply',
+            'see', 'store', 'details', 'restrictions', 'may', 'void',
+            'where', 'prohibited', 'law', 'tax', 'shipping', 'handling',
+            'additional', 'charges', 'final', 'checkout', 'cart', 'total',
+            
+            # Laundry & Cleaning
+            'washer', 'washing', 'machine', 'dryer', 'laundry', 'combo',
+            'stackable', 'side-by-side', 'front', 'load', 'top', 'high',
+            'efficiency', 'he', 'energy', 'star', 'certified', 'water',
+            'sense', 'technology', 'impeller', 'agitator', 'direct', 'drive',
+            'inverter', 'motor', 'quiet', 'operation', 'vibration', 'reduction',
+            'vrt', 'plus', 'smartcare', 'app', 'wifi', 'enabled', 'smart',
+            'diagnosis', 'remote', 'monitoring', 'control', 'cycle', 'customization',
+            'download', 'specialty', 'cycles', 'steam', 'sanitize', 'allergen',
+            'baby', 'care', 'sportswear', 'delicate', 'hand', 'wash',
+            'wool', 'cashmere', 'silk', 'lingerie', 'speed', 'wash',
+            'quick', 'express', 'refresh', 'rinse', 'spin', 'extra',
+            'heavy', 'duty', 'normal', 'cotton', 'permanent', 'press',
+            'wrinkle', 'care', 'anti-static', 'fabric', 'softener',
+            'dispenser', 'bleach', 'detergent', 'liquid', 'powder',
+            'pod', 'pac', 'tablet', 'sheet', 'eco', 'friendly',
+            'plant', 'based', 'biodegradable', 'hypoallergenic', 'sensitive',
+            'skin', 'free', 'clear', 'fragrance', 'dye', 'phosphate',
+            'optical', 'brightener', 'enzyme', 'stain', 'remover',
+            'pretreat', 'spot', 'treatment', 'oxygen', 'bleach',
+            'color', 'safe', 'whitening', 'brightening', 'odor',
+            'eliminator', 'pet', 'smoke', 'sweat', 'food', 'grease',
+            'oil', 'grass', 'mud', 'blood', 'wine', 'coffee', 'tea',
+            'makeup', 'lipstick', 'foundation', 'mascara', 'deodorant',
+            'antiperspirant', 'yellow', 'underarm', 'collar', 'ring',
+            'around', 'neck', 'cuff', 'hem', 'pocket', 'seam',
+            'vacuum', 'cleaner', 'upright', 'canister', 'stick', 'handheld',
+            'robot', 'robotic', 'cordless', 'bagless', 'bagged', 'hepa',
+            'filter', 'cyclonic', 'suction', 'power', 'brush', 'roll',
+            'beater', 'bar', 'rotating', 'edge', 'sweeping', 'side',
+            'crevice', 'tool', 'upholstery', 'dusting', 'pet', 'hair',
+            'motorized', 'turbo', 'mini', 'extension', 'wand', 'hose',
+            'attachments', 'accessories', 'storage', 'caddy', 'holder',
+            'wrap', 'cord', 'retractable', 'automatic', 'rewind',
+            'dyson', 'shark', 'bissell', 'hoover', 'eureka', 'dirt',
+            'devil', 'black', 'decker', 'tineco', 'moosoo', 'oreck',
+            'miele', 'sebo', 'riccar', 'simplicity', 'fuller', 'brush',
+            'kirby', 'rainbow', 'filter', 'queen', 'central', 'built-in',
+            'whole', 'house', 'system', 'duct', 'cleaning', 'air',
+            'purifier', 'ionizer', 'ozone', 'generator', 'uv', 'light',
+            'activated', 'carbon', 'charcoal', 'pre-filter', 'washable',
+            'replaceable', 'indicator', 'light', 'timer', 'auto', 'shutoff',
+            'sleep', 'mode', 'night', 'light', 'display', 'brightness',
+            'control', 'remote', 'smart', 'sensor', 'air', 'quality',
+            'monitor', 'pm2.5', 'particle', 'counter', 'allergen', 'dust',
+            'pollen', 'mold', 'spore', 'bacteria', 'virus', 'germ',
+            'smoke', 'odor', 'voc', 'volatile', 'organic', 'compound',
+            'formaldehyde', 'benzene', 'toluene', 'xylene', 'ammonia',
+            
+            # === HEALTH & FITNESS ===
+            
+            # Exercise Equipment
+            'fitness', 'exercise', 'workout', 'gym', 'home', 'equipment',
+            'treadmill', 'elliptical', 'stationary', 'bike', 'spin', 'cycle',
+            'rowing', 'machine', 'rower', 'stair', 'climber', 'stepper',
+            'cross', 'trainer', 'multi', 'station', 'home', 'gym', 'smith',
+            'machine', 'power', 'rack', 'squat', 'cage', 'pull', 'up',
+            'bar', 'dip', 'station', 'weight', 'bench', 'adjustable',
+            'flat', 'incline', 'decline', 'olympic', 'standard', 'plates',
+            'bumper', 'iron', 'rubber', 'coated', 'grip', 'hole', 'diameter',
+            'barbell', 'straight', 'curl', 'ez', 'trap', 'hex', 'safety',
+            'dumbbell', 'fixed', 'weight', 'adjustable', 'dial', 'select',
+            'powerblock', 'bowflex', 'ironmaster', 'quick', 'change', 'system',
+            'kettlebell', 'cast', 'iron', 'steel', 'competition', 'wide',
+            'handle', 'powder', 'coat', 'finish', 'vinyl', 'neoprene',
+            'resistance', 'band', 'tube', 'loop', 'mini', 'heavy', 'light',
+            'medium', 'extra', 'tension', 'level', 'door', 'anchor',
+            'handle', 'ankle', 'strap', 'carabiner', 'clip', 'snap',
+            'hook', 'protective', 'sleeve', 'carry', 'bag', 'storage',
+            'pouch', 'exercise', 'guide', 'workout', 'chart', 'poster',
+            'dvd', 'online', 'access', 'streaming', 'app', 'subscription',
+            'personal', 'trainer', 'coach', 'nutritionist', 'meal',
+            'plan', 'diet', 'program', 'weight', 'loss', 'muscle',
+            'building', 'strength', 'training', 'cardio', 'cardiovascular',
+            'aerobic', 'anaerobic', 'hiit', 'high', 'intensity', 'interval',
+            'tabata', 'circuit', 'functional', 'movement', 'crossfit',
+            'yoga', 'pilates', 'barre', 'dance', 'zumba', 'kickboxing',
+            'martial', 'arts', 'boxing', 'mma', 'mixed', 'fighting',
+            'self', 'defense', 'karate', 'taekwondo', 'jujitsu', 'judo',
+            'wrestling', 'grappling', 'sparring', 'heavy', 'bag', 'speed',
+            'double', 'end', 'uppercut', 'maize', 'gloves', 'wraps',
+            'mouthguard', 'headgear', 'shin', 'guards', 'protective',
+            'gear', 'cup', 'groin', 'protector', 'chest', 'protector',
+            
+            # Health & Wellness
+            'health', 'wellness', 'medical', 'healthcare', 'monitor',
+            'blood', 'pressure', 'glucose', 'meter', 'test', 'strip',
+            'lancet', 'lancing', 'device', 'control', 'solution',
+            'log', 'book', 'diabetes', 'management', 'insulin', 'pen',
+            'needle', 'syringe', 'vial', 'cartridge', 'storage', 'case',
+            'cooling', 'pack', 'travel', 'kit', 'thermometer', 'digital',
+            'infrared', 'ear', 'forehead', 'oral', 'rectal', 'underarm',
+            'axillary', 'temporal', 'artery', 'non-contact', 'touchless',
+            'fever', 'alarm', 'memory', 'recall', 'backlight', 'large',
+            'display', 'talking', 'voice', 'announcement', 'multilingual',
+            'celsius', 'fahrenheit', 'degree', 'scale', 'conversion',
+            'pulse', 'oximeter', 'oxygen', 'saturation', 'spo2', 'heart',
+            'rate', 'perfusion', 'index', 'pi', 'pleth', 'wave', 'form',
+            'pediatric', 'adult', 'sensor', 'probe', 'finger', 'clip',
+            'earlobe', 'forehead', 'reflectance', 'transmittance', 'technology',
+            'nebulizer', 'compressor', 'ultrasonic', 'mesh', 'portable',
+            'tabletop', 'handheld', 'battery', 'operated', 'rechargeable',
+            'ac', 'adapter', 'car', 'charger', 'mask', 'mouthpiece',
+            'tubing', 'medication', 'cup', 'reservoir', 'chamber',
+            'particle', 'size', 'mmad', 'respirable', 'fraction',
+            'delivery', 'rate', 'output', 'treatment', 'time',
+            'inhaler', 'mdi', 'metered', 'dose', 'dpi', 'dry', 'powder',
+            'spacer', 'valved', 'holding', 'chamber', 'vhc', 'aerosolized',
+            'medication', 'bronchodilator', 'steroid', 'anti-inflammatory',
+            
+            # === SPORTS & RECREATION ===
+            
+            # Team Sports
+            'basketball', 'hoop', 'rim', 'net', 'backboard', 'pole', 'base',
+            'portable', 'in-ground', 'wall-mounted', 'adjustable', 'height',
+            'regulation', 'size', 'outdoor', 'indoor', 'weatherproof',
+            'tempered', 'glass', 'acrylic', 'polycarbonate', 'breakaway',
+            'spalding', 'lifetime', 'goalrilla', 'silverback', 'mammoth',
+            'football', 'american', 'soccer', 'goal', 'post', 'crossbar',
+            'net', 'anchor', 'spike', 'ground', 'stake', 'sandbag',
+            'weight', 'popup', 'folding', 'portable', 'practice', 'training',
+            'youth', 'adult', 'professional', 'regulation', 'size',
+            'baseball', 'softball', 'bat', 'glove', 'mitt', 'catcher',
+            'first', 'base', 'fielder', 'infield', 'outfield', 'pitcher',
+            'helmet', 'batting', 'protective', 'gear', 'chest', 'protector',
+            'shin', 'guards', 'mask', 'throat', 'guard', 'cup', 'supporter',
+            'cleats', 'spikes', 'molded', 'metal', 'plastic', 'rubber',
+            'turf', 'shoes', 'pitching', 'machine', 'tee', 'batting',
+            'cage', 'net', 'frame', 'backstop', 'screen', 'l-screen',
+            'tennis', 'racket', 'racquet', 'strings', 'grip', 'overgrip',
+            'dampener', 'vibration', 'absorber', 'court', 'net', 'post',
+            'set', 'windscreen', 'privacy', 'ball', 'machine', 'hopper',
+            'basket', 'cart', 'pressure', 'pressureless', 'practice',
+            'badminton', 'shuttlecock', 'birdie', 'feather', 'synthetic',
+            'nylon', 'speed', 'slow', 'medium', 'fast', 'tournament',
+            'volleyball', 'beach', 'indoor', 'antenna', 'referee', 'stand',
+            'platform', 'whistle', 'scoreboard', 'score', 'flipper',
+            'knee', 'pads', 'elbow', 'ankle', 'support', 'brace',
+            
+            # Individual Sports
+            'golf', 'club', 'driver', 'wood', 'fairway', 'hybrid', 'iron',
+            'wedge', 'putter', 'set', 'individual', 'graphite', 'steel',
+            'shaft', 'flex', 'regular', 'stiff', 'extra', 'senior',
+            'ladies', 'junior', 'left', 'handed', 'right', 'custom',
+            'fitting', 'lie', 'angle', 'loft', 'grip', 'size', 'cord',
+            'rubber', 'synthetic', 'leather', 'wrap', 'tape', 'solvent',
+            'kit', 'installation', 'removal', 'tool', 'vice', 'clamp',
+            'bag', 'stand', 'cart', 'staff', 'tour', 'carry', 'sunday',
+            'pencil', 'lightweight', 'waterproof', 'rain', 'hood', 'cover',
+            'divider', 'top', 'pocket', 'organization', 'cooler', 'insulated',
+            'strap', 'dual', 'single', 'backpack', 'style', 'push', 'pull',
+            'electric', 'remote', 'control', 'gps', 'rangefinder', 'laser',
+            'distance', 'measuring', 'device', 'slope', 'compensation',
+            'pin', 'seeking', 'vibration', 'confirmation', 'tournament',
+            'legal', 'usga', 'approved', 'ball', 'dozen', 'sleeve',
+            'practice', 'range', 'dimple', 'pattern', 'compression',
+            'spin', 'rate', 'trajectory', 'distance', 'control', 'feel',
+            'tee', 'wooden', 'plastic', 'bamboo', 'biodegradable',
+            'castle', 'brush', 'step', 'down', 'pride', 'zero', 'friction',
+            'glove', 'cadet', 'regular', 'cabretta', 'leather', 'synthetic',
+            'all', 'weather', 'rain', 'grip', 'magnetic', 'ball', 'marker',
+            'hat', 'clip', 'divot', 'repair', 'tool', 'switchblade',
+            'fork', 'pitch', 'mark', 'green', 'maintenance', 'etiquette',
+            'swimming', 'goggles', 'mask', 'snorkel', 'fin', 'flipper',
+            'kickboard', 'pull', 'buoy', 'paddle', 'hand', 'webbed',
+            'glove', 'resistance', 'parachute', 'drag', 'suit', 'tech',
+            'suit', 'jammer', 'brief', 'square', 'leg', 'one', 'piece',
+            'two', 'piece', 'bikini', 'tankini', 'board', 'short', 'rash',
+            'guard', 'sun', 'protection', 'upf', 'rating', 'chlorine',
+            'resistant', 'fade', 'proof', 'quick', 'dry', 'compression',
+            'hydrodynamic', 'streamlined', 'seam', 'bonded', 'flatlock',
+            'cap', 'silicone', 'latex', 'lycra', 'mesh', 'dome', 'shaped',
+            'wrinkle', 'free', 'tear', 'resistant', 'nose', 'clip',
+            'ear', 'plug', 'wax', 'putty', 'moldable', 'pre-molded',
+            'flanged', 'christmas', 'tree', 'design', 'triple', 'flange',
+            'cord', 'lanyard', 'case', 'storage', 'container', 'box',
+            'cycling', 'bicycle', 'bike', 'road', 'mountain', 'hybrid',
+            'cruiser', 'bmx', 'electric', 'ebike', 'folding', 'recumbent',
+            'tandem', 'tricycle', 'adult', 'trike', 'frame', 'carbon',
+            'fiber', 'aluminum', 'steel', 'titanium', 'alloy', 'chromoly',
+            'fork', 'suspension', 'rigid', 'air', 'coil', 'spring',
+            'lockout', 'remote', 'travel', 'mm', 'inches', 'wheel',
+            'size', '26', '27.5', '29', '700c', 'tire', 'tubeless',
+            'clincher', 'tubular', 'tread', 'pattern', 'knobby', 'slick',
+            'semi-slick', 'all', 'terrain', 'pressure', 'psi', 'bar',
+            'pump', 'floor', 'hand', 'co2', 'inflator', 'cartridge',
+            'presta', 'schrader', 'valve', 'adapter', 'gauge', 'digital',
+            'helmet', 'mips', 'technology', 'multi-directional', 'impact',
+            'protection', 'system', 'ventilation', 'vent', 'hole',
+            'retention', 'dial', 'fit', 'system', 'boa', 'ratchet',
+            'micro', 'adjust', 'chin', 'strap', 'buckle', 'magnetic',
+            'fidlock', 'light', 'mount', 'camera', 'action', 'cam',
+            'visor', 'peak', 'removable', 'aero', 'time', 'trial',
+            'tt', 'triathlon', 'tri', 'aerodynamic', 'wind', 'tunnel',
+            'tested', 'watts', 'saved', 'drag', 'coefficient', 'cda',
+            
+            # Water Sports
+            'surfboard', 'longboard', 'shortboard', 'fish', 'funboard',
+            'gun', 'step', 'up', 'tow', 'in', 'foam', 'beginner',
+            'soft', 'top', 'epoxy', 'polyurethane', 'pu', 'polystyrene',
+            'eps', 'carbon', 'fiber', 'fiberglass', 'construction',
+            'shaper', 'custom', 'blank', 'stringer', 'rail', 'rocker',
+            'nose', 'tail', 'concave', 'vee', 'channel', 'quad',
+            'thruster', 'single', 'fin', 'setup', 'fcs', 'futures',
+            'fin', 'box', 'system', 'removable', 'fixed', 'glass',
+            'on', 'flex', 'pattern', 'rake', 'sweep', 'base', 'width',
+            'area', 'volume', 'liter', 'calculation', 'buoyancy',
+            'paddle', 'board', 'sup', 'stand', 'up', 'paddleboard',
+            'inflatable', 'isup', 'rigid', 'displacement', 'hull',
+            'planing', 'all', 'around', 'touring', 'race', 'yoga',
+            'fishing', 'whitewater', 'river', 'surf', 'sup', 'ocean',
+            'lake', 'flatwater', 'downwind', 'crossover', 'multi',
+            'purpose', 'adjustable', 'telescoping', 'breakdown',
+            'three', 'piece', 'carbon', 'fiberglass', 'aluminum',
+            'plastic', 'nylon', 'blade', 'shaft', 'handle', 'grip',
+            'dihedral', 'angle', 'feather', 'offset', 'straight',
+            'bent', 'curved', 'power', 'face', 'drive', 'face',
+            'catch', 'phase', 'stroke', 'technique', 'forward',
+            'reverse', 'sweep', 'draw', 'j-stroke', 'c-stroke',
+            'kayak', 'canoe', 'recreational', 'touring', 'sea',
+            'whitewater', 'creek', 'playboat', 'freestyle', 'slalom',
+            'wildwater', 'sprint', 'marathon', 'outrigger', 'dragon',
+            'boat', 'war', 'canoe', 'solo', 'tandem', 'crew',
+            'cockpit', 'sit', 'in', 'sit', 'on', 'top', 'sot',
+            'scupper', 'hole', 'plug', 'drain', 'deck', 'hatch',
+            'storage', 'compartment', 'bulkhead', 'watertight',
+            'dry', 'bag', 'roll', 'top', 'compression', 'sack',
+            'stuff', 'mesh', 'laundry', 'gear', 'organizer',
+            'paddle', 'float', 'leash', 'coil', 'straight', 'ankle',
+            'calf', 'thigh', 'waist', 'belt', 'quick', 'release',
+            'swivel', 'connector', 'velcro', 'strap', 'neoprene',
+            'urethane', 'cord', 'bungee', 'elastic', 'shock',
+            
+            # Winter Sports
+            'ski', 'skiing', 'alpine', 'downhill', 'cross', 'country',
+            'nordic', 'backcountry', 'touring', 'telemark', 'freestyle',
+            'mogul', 'racing', 'slalom', 'giant', 'gs', 'super',
+            'g', 'downhill', 'speed', 'combined', 'parallel',
+            'skis', 'all', 'mountain', 'carving', 'powder', 'freeride',
+            'freestyle', 'park', 'pipe', 'twin', 'tip', 'rocker',
+            'camber', 'profile', 'traditional', 'early', 'rise',
+            'reverse', 'flat', 'hybrid', 'construction', 'cap',
+            'sandwich', 'sidewall', 'torsion', 'box', 'wood', 'core',
+            'foam', 'honeycomb', 'metal', 'laminate', 'titanal',
+            'carbon', 'fiber', 'fiberglass', 'base', 'sintered',
+            'extruded', 'ptex', 'edge', 'steel', 'tuning', 'wax',
+            'binding', 'din', 'setting', 'release', 'value', 'toe',
+            'heel', 'piece', 'brake', 'anti-friction', 'device',
+            'afd', 'plate', 'riser', 'lifter', 'forward', 'lean',
+            'adjustment', 'canting', 'alignment', 'boot', 'sole',
+            'length', 'bsl', 'mondo', 'point', 'size', 'last',
+            'width', 'volume', 'flex', 'rating', 'stiffness',
+            'forward', 'flex', 'lateral', 'support', 'cuff',
+            'adjustment', 'micro', 'buckle', 'boa', 'lacing',
+            'system', 'power', 'strap', 'velcro', 'booster',
+            'strap', 'heel', 'hold', 'liner', 'footbed', 'insole',
+            'custom', 'moldable', 'heat', 'moldable', 'thermo',
+            'formable', 'intuition', 'foam', 'memory', 'foam',
+            'snowboard', 'snowboarding', 'freestyle', 'freeride',
+            'all', 'mountain', 'powder', 'splitboard', 'touring',
+            'directional', 'twin', 'directional', 'twin', 'true',
+            'twin', 'shape', 'camber', 'rocker', 'hybrid', 'profile',
+            'effective', 'edge', 'sidecut', 'radius', 'waist', 'width',
+            'nose', 'tail', 'width', 'stance', 'setback', 'centered',
+            'reference', 'point', 'binding', 'mounting', 'pattern',
+            'channel', 'system', 'burton', 'est', 'reflex', 'disk',
+            'baseplate', 'highback', 'ankle', 'strap', 'toe', 'strap',
+            'ladder', 'ratchet', 'micro', 'adjustment', 'forward',
+            'lean', 'rotation', 'canting', 'response', 'flex',
+            'soft', 'medium', 'stiff', 'dampening', 'shock',
+            'absorption', 'boots', 'traditional', 'lacing', 'speed',
+            'lacing', 'boa', 'system', 'dual', 'zone', 'coiler',
+            'reel', 'dial', 'closure', 'liner', 'heat', 'moldable',
+            'j-bars', 'heel', 'hold', 'technology', 'response',
+            'foam', 'impact', 'panel', 'shock', 'absorption',
+            
+            # === BOOKS & MEDIA ===
+            
+            # Books
+            'book', 'books', 'novel', 'fiction', 'non-fiction', 'biography',
+            'autobiography', 'memoir', 'history', 'science', 'technology',
+            'business', 'self-help', 'health', 'fitness', 'cooking',
+            'cookbook', 'recipe', 'travel', 'guide', 'religion',
+            'spirituality', 'philosophy', 'psychology', 'education',
+            'textbook', 'reference', 'dictionary', 'encyclopedia',
+            'atlas', 'map', 'children', 'young', 'adult', 'romance',
+            'mystery', 'thriller', 'horror', 'fantasy', 'science',
+            'fiction', 'western', 'adventure', 'action', 'drama',
+            'comedy', 'humor', 'poetry', 'classic', 'literature',
+            'contemporary', 'bestseller', 'award', 'winner', 'pulitzer',
+            'nobel', 'booker', 'newbery', 'caldecott', 'hugo', 'nebula',
+            'hardcover', 'paperback', 'mass', 'market', 'trade',
+            'ebook', 'kindle', 'nook', 'kobo', 'ibooks', 'google',
+            'play', 'audiobook', 'audible', 'narrator', 'unabridged',
+            'abridged', 'author', 'writer', 'publisher', 'imprint',
+            'edition', 'first', 'revised', 'updated', 'anniversary',
+            'illustrated', 'photos', 'pictures', 'diagrams', 'charts',
+            'graphs', 'index', 'bibliography', 'footnotes', 'endnotes',
+            'appendix', 'glossary', 'preface', 'foreword', 'introduction',
+            'chapter', 'section', 'part', 'volume', 'series', 'sequel',
+            'prequel', 'trilogy', 'saga', 'collection', 'anthology',
+            'compilation', 'omnibus', 'box', 'set', 'library', 'bookstore',
+            'amazon', 'barnes', 'noble', 'borders', 'bookdepository',
+            'thriftbooks', 'alibris', 'abebooks', 'biblio', 'vialibri',
+            
+            # Music & Audio
+            'music', 'album', 'cd', 'vinyl', 'record', 'lp', 'ep', 'single',
+            'cassette', 'tape', 'digital', 'download', 'streaming', 'spotify',
+            'apple', 'music', 'amazon', 'music', 'youtube', 'music',
+            'pandora', 'tidal', 'deezer', 'soundcloud', 'bandcamp',
+            'genre', 'rock', 'pop', 'country', 'blues', 'jazz', 'classical',
+            'hip', 'hop', 'rap', 'rnb', 'soul', 'funk', 'disco', 'house',
+            'techno', 'electronic', 'edm', 'dance', 'trance', 'dubstep',
+            'drum', 'bass', 'ambient', 'new', 'age', 'world', 'folk',
+            'acoustic', 'indie', 'alternative', 'punk', 'metal', 'heavy',
+            'death', 'black', 'thrash', 'progressive', 'symphonic',
+            'power', 'speed', 'doom', 'sludge', 'stoner', 'grunge',
+            'shoegaze', 'post', 'rock', 'math', 'emo', 'hardcore',
+            'ska', 'reggae', 'dub', 'dancehall', 'afrobeat', 'latin',
+            'salsa', 'merengue', 'bachata', 'cumbia', 'tango', 'flamenco',
+            'artist', 'band', 'singer', 'songwriter', 'musician', 'composer',
+            'producer', 'dj', 'remix', 'cover', 'tribute', 'greatest',
+            'hits', 'best', 'of', 'compilation', 'soundtrack', 'score',
+            'original', 'motion', 'picture', 'television', 'broadway',
+            'cast', 'recording', 'live', 'concert', 'performance', 'tour',
+            'acoustic', 'unplugged', 'mtv', 'sessions', 'radio', 'edit',
+            'extended', 'version', 'instrumental', 'karaoke', 'acapella',
+            'remaster', 'remastered', 'deluxe', 'special', 'limited',
+            'collector', 'anniversary', 'expanded', 'bonus', 'tracks',
+            'unreleased', 'rare', 'import', 'bootleg', 'demo', 'outtake',
+            'b-side', 'radio', 'promo', 'white', 'label', 'test',
+            'pressing', 'picture', 'disc', 'colored', 'splatter',
+            'marbled', 'clear', 'transparent', 'glow', 'dark',
+            'heavyweight', 'audiophile', 'half', 'speed', 'mastered',
+            'direct', 'metal', 'dmm', 'quality', 'pressing',
+            
+            # Movies & TV
+            'movie', 'film', 'dvd', 'bluray', 'blu-ray', '4k', 'uhd',
+            'ultra', 'high', 'definition', 'hdr', 'dolby', 'vision',
+            'atmos', 'dts', 'surround', 'sound', 'digital', 'download',
+            'streaming', 'netflix', 'hulu', 'amazon', 'prime', 'disney',
+            'plus', 'hbo', 'max', 'paramount', 'peacock', 'apple',
+            'tv', 'showtime', 'starz', 'epix', 'cinemax', 'vudu',
+            'itunes', 'google', 'play', 'microsoft', 'store', 'youtube',
+            'movies', 'rental', 'purchase', 'own', 'rent', 'buy',
+            'genre', 'action', 'adventure', 'comedy', 'drama', 'horror',
+            'thriller', 'mystery', 'romance', 'sci-fi', 'fantasy',
+            'western', 'war', 'historical', 'biographical', 'documentary',
+            'animated', 'family', 'kids', 'musical', 'crime', 'noir',
+            'superhero', 'disaster', 'survival', 'sports', 'martial',
+            'arts', 'spy', 'heist', 'road', 'trip', 'coming', 'age',
+            'teen', 'slasher', 'zombie', 'vampire', 'werewolf',
+            'alien', 'space', 'time', 'travel', 'dystopian', 'utopian',
+            'post', 'apocalyptic', 'cyberpunk', 'steampunk', 'alternate',
+            'history', 'parallel', 'universe', 'dimension', 'multiverse',
+            'director', 'producer', 'writer', 'screenplay', 'script',
+            'actor', 'actress', 'cast', 'crew', 'cinematographer',
+            'editor', 'composer', 'score', 'soundtrack', 'theme',
+            'song', 'music', 'supervisor', 'costume', 'designer',
+            'production', 'designer', 'set', 'decorator', 'makeup',
+            'artist', 'hair', 'stylist', 'special', 'effects', 'sfx',
+            'visual', 'effects', 'vfx', 'cgi', 'computer', 'generated',
+            'imagery', 'motion', 'capture', 'mocap', 'green', 'screen',
+            'chroma', 'key', 'practical', 'effects', 'prosthetics',
+            'animatronics', 'puppets', 'miniatures', 'matte', 'painting',
+            'stunt', 'coordinator', 'double', 'fight', 'choreographer',
+            'academy', 'award', 'oscar', 'golden', 'globe', 'bafta',
+            'cannes', 'sundance', 'toronto', 'film', 'festival', 'tiff',
+            'venice', 'berlin', 'berlinale', 'critics', 'choice',
+            'screen', 'actors', 'guild', 'sag', 'directors', 'guild',
+            'dga', 'writers', 'guild', 'wga', 'producers', 'guild',
+            'pga', 'cinematographers', 'asc', 'editors', 'ace',
+            'television', 'tv', 'show', 'series', 'season', 'episode',
+            'pilot', 'finale', 'premiere', 'network', 'cable', 'premium',
+            'broadcast', 'syndication', 'rerun', 'marathon', 'binge',
+            'watch', 'complete', 'box', 'set', 'collection', 'anthology',
+            'miniseries', 'limited', 'drama', 'comedy', 'sitcom',
+            'variety', 'talk', 'show', 'game', 'reality', 'competition',
+            'cooking', 'home', 'improvement', 'makeover', 'dating',
+            'survival', 'talent', 'singing', 'dancing', 'news',
+            'documentary', 'educational', 'nature', 'wildlife', 'travel',
+            'food', 'lifestyle', 'fashion', 'sports', 'espn', 'fox',
+            'nbc', 'abc', 'cbs', 'cw', 'pbs', 'hgtv', 'food', 'network',
+            'discovery', 'channel', 'history', 'national', 'geographic',
+            'animal', 'planet', 'science', 'tlc', 'bravo', 'e',
+            'entertainment', 'mtv', 'vh1', 'comedy', 'central', 'cartoon',
+            'network', 'adult', 'swim', 'nickelodeon', 'disney', 'channel',
+            
+            # === BABY & KIDS ===
+            
+            # Baby Care
+            'baby', 'infant', 'newborn', 'toddler', 'child', 'kid', 'kids',
+            'stroller', 'pushchair', 'pram', 'buggy', 'travel', 'system',
+            'car', 'seat', 'carrier', 'jogger', 'umbrella', 'lightweight',
+            'full', 'size', 'compact', 'fold', 'one', 'hand', 'standing',
+            'self', 'standing', 'all', 'terrain', 'three', 'wheel',
+            'four', 'wheel', 'swivel', 'lock', 'front', 'wheel',
+            'suspension', 'adjustable', 'handlebar', 'reversible', 'seat',
+            'multiple', 'recline', 'position', 'lie', 'flat', 'newborn',
+            'compatible', 'five', 'point', 'harness', 'safety', 'bar',
+            'removable', 'cup', 'holder', 'parent', 'tray', 'child',
+            'snack', 'storage', 'basket', 'large', 'canopy', 'extendable',
+            'sun', 'shade', 'peek', 'a', 'boo', 'window', 'weather',
+            'shield', 'rain', 'cover', 'footmuff', 'cozy', 'toe',
+            'britax', 'chicco', 'graco', 'evenflo', 'safety1st',
+            'uppababy', 'bugaboo', 'maclaren', 'quinny', 'peg', 'perego',
+            'inglesina', 'orbit', 'baby', 'jogger', 'city', 'mini',
+            'select', 'versa', 'cruz', 'vista', 'mesa', 'infant',
+            'car', 'seat', 'base', 'isofix', 'latch', 'installation',
+            'rear', 'facing', 'forward', 'facing', 'convertible',
+            'booster', 'seat', 'backless', 'high', 'back', 'belt',
+            'positioning', 'side', 'impact', 'protection', 'energy',
+            'absorbing', 'foam', 'steel', 'reinforced', 'frame',
+            'easy', 'clean', 'fabric', 'machine', 'washable', 'removable',
+            'cover', 'dishwasher', 'safe', 'parts', 'bpa', 'free',
+            'phthalate', 'free', 'lead', 'free', 'non', 'toxic',
+            'crib', 'bassinet', 'cradle', 'co', 'sleeper', 'beside',
+            'sleeper', 'bedside', 'sleeper', 'moses', 'basket',
+            'portable', 'crib', 'travel', 'crib', 'pack', 'play',
+            'playard', 'playpen', 'changing', 'table', 'dresser',
+            'combo', 'pad', 'cover', 'fitted', 'sheet', 'mattress',
+            'organic', 'cotton', 'bamboo', 'hypoallergenic', 'breathable',
+            'firm', 'support', 'dual', 'sided', 'infant', 'toddler',
+            'waterproof', 'protector', 'liner', 'bumper', 'guard',
+            'rail', 'teething', 'guard', 'mobile', 'musical', 'rotating',
+            'projection', 'night', 'light', 'sound', 'machine', 'white',
+            'noise', 'nature', 'sounds', 'lullaby', 'music', 'timer',
+            'volume', 'control', 'remote', 'control', 'smartphone',
+            'app', 'wifi', 'enabled', 'baby', 'monitor', 'audio',
+            'video', 'movement', 'breathing', 'temperature', 'humidity',
+            'two', 'way', 'talk', 'intercom', 'walkie', 'talkie',
+            'night', 'vision', 'infrared', 'zoom', 'pan', 'tilt',
+            'multiple', 'camera', 'split', 'screen', 'view'
+        }

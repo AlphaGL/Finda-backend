@@ -1962,3 +1962,157 @@ class PromotionCallbackAPIView(APIView):
         # This would activate the promotion after successful payment
         
         return Response({'message': 'Promotion callback received'})
+    
+
+
+
+from rest_framework.decorators import api_view
+import cloudinary.uploader
+
+# Products Gallery Upload
+@api_view(['POST'])
+def upload_gallery_images(request, product_id):
+    try:
+        product = Products.objects.get(id=product_id)
+        uploaded_urls = []
+        
+        # Handle multiple file uploads
+        for key, file in request.FILES.items():
+            if key.startswith('gallery_image'):
+                # Upload to Cloudinary
+                result = cloudinary.uploader.upload(
+                    file,
+                    folder="product_images/gallery",
+                    transformation=[
+                        {'width': 800, 'height': 600, 'crop': 'fill'},
+                        {'quality': 'auto'}
+                    ]
+                )
+                uploaded_urls.append({
+                    'url': result['secure_url'],
+                    'public_id': result['public_id'],
+                    'width': result.get('width'),
+                    'height': result.get('height')
+                })
+        
+        # Append to existing images or replace
+        existing_images = product.gallery_images or []
+        if request.data.get('replace', 'false').lower() == 'true':
+            product.gallery_images = uploaded_urls
+        else:
+            # Append new images (limit to 10 total)
+            total_images = existing_images + uploaded_urls
+            product.gallery_images = total_images[:10]
+        
+        product.save()
+        
+        return Response({
+            'gallery_images': product.gallery_images,
+            'total_count': len(product.gallery_images)
+        })
+    except Products.DoesNotExist:
+        return Response({'error': 'Product not found'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+
+# Services Gallery Upload
+@api_view(['POST'])
+def upload_gallery_service_images(request, service_id):
+    try:
+        service = Services.objects.get(id=service_id)  # Fixed: was 'product'
+        uploaded_urls = []
+        
+        # Handle multiple file uploads
+        for key, file in request.FILES.items():
+            if key.startswith('gallery_image'):
+                # Upload to Cloudinary
+                result = cloudinary.uploader.upload(
+                    file,
+                    folder="service_images/gallery",
+                    transformation=[
+                        {'width': 800, 'height': 600, 'crop': 'fill'},
+                        {'quality': 'auto'}
+                    ]
+                )
+                uploaded_urls.append({
+                    'url': result['secure_url'],
+                    'public_id': result['public_id'],
+                    'width': result.get('width'),
+                    'height': result.get('height')
+                })
+        
+        # Append to existing images or replace
+        existing_images = service.gallery_images or []
+        if request.data.get('replace', 'false').lower() == 'true':
+            service.gallery_images = uploaded_urls
+        else:
+            # Append new images (limit to 8 total for services)
+            total_images = existing_images + uploaded_urls
+            service.gallery_images = total_images[:8]
+        
+        service.save()
+        
+        return Response({
+            'gallery_images': service.gallery_images,
+            'total_count': len(service.gallery_images)
+        })
+    except Services.DoesNotExist:
+        return Response({'error': 'Service not found'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+
+# Delete Product Gallery Image
+@api_view(['DELETE'])
+def delete_product_gallery_image(request, product_id, image_index):
+    try:
+        product = Products.objects.get(id=product_id)
+        
+        if 0 <= image_index < len(product.gallery_images):
+            # Delete from Cloudinary
+            image_to_delete = product.gallery_images[image_index]
+            if isinstance(image_to_delete, dict) and 'public_id' in image_to_delete:
+                cloudinary.uploader.destroy(image_to_delete['public_id'])
+            
+            # Remove from list
+            product.gallery_images.pop(image_index)
+            product.save()
+            
+            return Response({
+                'success': True, 
+                'remaining_images': product.gallery_images,
+                'total_count': len(product.gallery_images)
+            })
+        else:
+            return Response({'error': 'Invalid image index'}, status=400)
+    except Products.DoesNotExist:
+        return Response({'error': 'Product not found'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)
+
+# Delete Service Gallery Image
+@api_view(['DELETE'])
+def delete_service_gallery_image(request, service_id, image_index):
+    try:
+        service = Services.objects.get(id=service_id)
+        
+        if 0 <= image_index < len(service.gallery_images):
+            # Delete from Cloudinary
+            image_to_delete = service.gallery_images[image_index]
+            if isinstance(image_to_delete, dict) and 'public_id' in image_to_delete:
+                cloudinary.uploader.destroy(image_to_delete['public_id'])
+            
+            # Remove from list
+            service.gallery_images.pop(image_index)
+            service.save()
+            
+            return Response({
+                'success': True, 
+                'remaining_images': service.gallery_images,
+                'total_count': len(service.gallery_images)
+            })
+        else:
+            return Response({'error': 'Invalid image index'}, status=400)
+    except Services.DoesNotExist:
+        return Response({'error': 'Service not found'}, status=404)
+    except Exception as e:
+        return Response({'error': str(e)}, status=400)

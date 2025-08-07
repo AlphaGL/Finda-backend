@@ -671,11 +671,48 @@ def extract_search_terms_from_analysis(analysis_text):
         
         # Remove common stop words
         stop_words = {
-            'the', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
-            'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had',
-            'image', 'picture', 'photo', 'see', 'show', 'find', 'search', 'looking', 'appears',
-            'this', 'that', 'these', 'those', 'can', 'could', 'would', 'should', 'may', 'might'
+            # Basic articles, pronouns & conjunctions
+            'the', 'and', 'or', 'but', 'if', 'then', 'else', 'when', 'while', 'as', 'than', 'that',
+            'this', 'these', 'those', 'it', 'its', 'they', 'them', 'their', 'we', 'us', 'our', 'you',
+            'your', 'yours', 'i', 'me', 'my', 'mine', 'he', 'him', 'his', 'she', 'her', 'hers', 'who',
+            'whom', 'whose', 'which', 'what', 'where', 'why', 'how', 'a', 'an',
+
+            # Verb auxiliaries & common verbs
+            'is', 'are', 'was', 'were', 'be', 'been', 'being', 'am', 'do', 'does', 'did', 'doing',
+            'have', 'has', 'had', 'having', 'can', 'could', 'should', 'would', 'shall', 'will', 'may',
+            'might', 'must',
+
+            # Prepositions & position words
+            'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'from', 'about', 'into', 'over', 'under',
+            'between', 'among', 'across', 'through', 'before', 'after', 'during', 'within', 'without',
+            'up', 'down', 'off', 'onto', 'out', 'around', 'near', 'above', 'below',
+
+            # Filler and vague search terms
+            'image', 'images', 'picture', 'pictures', 'photo', 'photos', 'pic', 'pics', 'see', 'show',
+            'look', 'looking', 'find', 'search', 'searched', 'appears', 'display', 'view', 'views',
+            'browse', 'check', 'checked',
+
+            # Descriptive but non-essential for matching
+            'new', 'latest', 'old', 'older', 'brand', 'best', 'top', 'cheap', 'cheapest', 'expensive',
+            'affordable', 'quality', 'high', 'low', 'great', 'good', 'bad', 'better', 'worse',
+
+            # Temporal
+            'today', 'yesterday', 'tomorrow', 'now', 'later', 'soon', 'recent', 'recently', 'year',
+            'month', 'week', 'day', 'hour', 'minute', 'second', 'season', 'spring', 'summer', 'autumn',
+            'fall', 'winter', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday',
+            'sunday', 'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+            'september', 'october', 'november', 'december',
+
+            # Numbers & ordinals (often irrelevant in fuzzy match unless price)
+            'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+            'first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth', 'tenth',
+
+            # Misc common noise
+            'etc', 'etc.', 'ok', 'okay', 'yes', 'no', 'please', 'thanks', 'thank', 'hi', 'hello', 'hey',
+            'help', 'info', 'information', 'details', 'detail', 'more', 'less', 'other', 'others',
+            'item', 'items', 'thing', 'things', 'stuff', 'product', 'products', 'service', 'services',
         }
+
         
         # Extract meaningful words
         words = re.findall(r'\b[a-zA-Z]{3,}\b', analysis_text.lower())

@@ -194,8 +194,15 @@ class Products(models.Model):
     
     # Images
     featured_image = CloudinaryField('product_images/featured')
-    # gallery_images = models.JSONField(default=list, blank=True, help_text="Store multiple Cloudinary URLs")
-    gallery_images = CloudinaryField('product_images/gallery')
+
+    # Use JSONField to store multiple Cloudinary URLs
+    gallery_images = models.JSONField(default=list, blank=True, help_text="Store multiple Cloudinary URLs")
+    
+    def save_gallery_images(self, cloudinary_urls):
+        """Helper method to save gallery images"""
+        self.gallery_images = cloudinary_urls
+        self.save()
+
     
     # Pricing
     product_price = models.DecimalField(max_digits=15, decimal_places=2)
@@ -345,8 +352,14 @@ class Services(models.Model):
     
     # Images
     featured_image = CloudinaryField('service_images/featured')
-    # gallery_images = models.JSONField(default=list, blank=True)
-    gallery_images = CloudinaryField('service_images/gallery')
+
+    # Use JSONField to store multiple Cloudinary URLs
+    gallery_images = models.JSONField(default=list, blank=True, help_text="Store multiple Cloudinary URLs")
+    
+    def save_gallery_images(self, cloudinary_urls):
+        """Helper method to save gallery images"""
+        self.gallery_images = cloudinary_urls
+        self.save()
     
     # Location (Foreign Keys)
     country = models.ForeignKey(Country, on_delete=models.CASCADE, related_name='services')
