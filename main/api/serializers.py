@@ -155,8 +155,9 @@ class ProductRatingSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
     user_name = serializers.CharField(source='user.username', read_only=True)
     
+    # Match your model's max_digits=2, decimal_places=1
     rating = serializers.DecimalField(
-        max_digits=3,
+        max_digits=2,
         decimal_places=1,
         coerce_to_string=False
     )
@@ -166,32 +167,47 @@ class ProductRatingSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'user_details', 'user_name', 'rating', 'review_title',
             'review', 'pros', 'cons', 'would_recommend', 'is_verified_purchase',
-            'helpful_count', 'created_at', 'updated_at'
+            'helpful_count', 'is_active', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['user', 'created_at', 'updated_at', 'helpful_count']
+        read_only_fields = ['user', 'created_at', 'updated_at', 'helpful_count', 'is_active']
     
     def validate_rating(self, value):
+        # Handle None values
+        if value is None:
+            raise serializers.ValidationError("Rating is required")
+        
         # Convert to Decimal if it's a float
         if isinstance(value, float):
             value = Decimal(str(value))
+        elif not isinstance(value, Decimal):
+            try:
+                value = Decimal(str(value))
+            except (ValueError, TypeError):
+                raise serializers.ValidationError("Invalid rating format")
         
-        if not (Decimal('1.0') <= value <= Decimal('5.0')):
-            raise serializers.ValidationError("Rating must be between 1.0 and 5.0")
+        # Check valid rating values (based on your model choices)
+        valid_ratings = [Decimal('1.0'), Decimal('1.5'), Decimal('2.0'), Decimal('2.5'), 
+                        Decimal('3.0'), Decimal('3.5'), Decimal('4.0'), Decimal('4.5'), Decimal('5.0')]
+        
+        if value not in valid_ratings:
+            raise serializers.ValidationError(
+                "Rating must be one of: 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0"
+            )
         return value
 
 class ServiceRatingSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
     user_name = serializers.CharField(source='user.username', read_only=True)
     
+    # Match your model's max_digits=2, decimal_places=1
     rating = serializers.DecimalField(
-        max_digits=3,
+        max_digits=2,
         decimal_places=1,
         coerce_to_string=False
     )
     
-    # Add validation for other rating fields if they exist
     communication_rating = serializers.DecimalField(
-        max_digits=3,
+        max_digits=2,
         decimal_places=1,
         coerce_to_string=False,
         required=False,
@@ -199,7 +215,7 @@ class ServiceRatingSerializer(serializers.ModelSerializer):
     )
     
     quality_rating = serializers.DecimalField(
-        max_digits=3,
+        max_digits=2,
         decimal_places=1,
         coerce_to_string=False,
         required=False,
@@ -207,7 +223,7 @@ class ServiceRatingSerializer(serializers.ModelSerializer):
     )
     
     timeliness_rating = serializers.DecimalField(
-        max_digits=3,
+        max_digits=2,
         decimal_places=1,
         coerce_to_string=False,
         required=False,
@@ -220,41 +236,52 @@ class ServiceRatingSerializer(serializers.ModelSerializer):
             'id', 'user', 'user_details', 'user_name', 'rating', 'review_title',
             'review', 'communication_rating', 'quality_rating', 'timeliness_rating',
             'would_recommend', 'would_hire_again', 'is_verified_customer',
-            'helpful_count', 'created_at', 'updated_at'
+            'helpful_count', 'is_active', 'created_at', 'updated_at'
         ]
-        read_only_fields = ['user', 'created_at', 'updated_at', 'helpful_count']
+        read_only_fields = ['user', 'created_at', 'updated_at', 'helpful_count', 'is_active']
     
     def validate_rating(self, value):
-        # Convert to Decimal if it's a float
-        if isinstance(value, float):
-            value = Decimal(str(value))
-        
-        if not (Decimal('1.0') <= value <= Decimal('5.0')):
-            raise serializers.ValidationError("Rating must be between 1.0 and 5.0")
-        return value
+        return self._validate_rating_field(value, "Rating")
     
     def validate_communication_rating(self, value):
         if value is not None:
-            if isinstance(value, float):
-                value = Decimal(str(value))
-            if not (Decimal('1.0') <= value <= Decimal('5.0')):
-                raise serializers.ValidationError("Communication rating must be between 1.0 and 5.0")
+            return self._validate_rating_field(value, "Communication rating")
         return value
     
     def validate_quality_rating(self, value):
         if value is not None:
-            if isinstance(value, float):
-                value = Decimal(str(value))
-            if not (Decimal('1.0') <= value <= Decimal('5.0')):
-                raise serializers.ValidationError("Quality rating must be between 1.0 and 5.0")
+            return self._validate_rating_field(value, "Quality rating")
         return value
     
     def validate_timeliness_rating(self, value):
         if value is not None:
-            if isinstance(value, float):
+            return self._validate_rating_field(value, "Timeliness rating")
+        return value
+    
+    def _validate_rating_field(self, value, field_name):
+        """Helper method to validate rating fields"""
+        if value is None:
+            if field_name == "Rating":  # Main rating is required
+                raise serializers.ValidationError(f"{field_name} is required")
+            return value
+        
+        # Convert to Decimal if it's a float
+        if isinstance(value, float):
+            value = Decimal(str(value))
+        elif not isinstance(value, Decimal):
+            try:
                 value = Decimal(str(value))
-            if not (Decimal('1.0') <= value <= Decimal('5.0')):
-                raise serializers.ValidationError("Timeliness rating must be between 1.0 and 5.0")
+            except (ValueError, TypeError):
+                raise serializers.ValidationError(f"Invalid {field_name.lower()} format")
+        
+        # Check valid rating values (based on your model choices)
+        valid_ratings = [Decimal('1.0'), Decimal('1.5'), Decimal('2.0'), Decimal('2.5'), 
+                        Decimal('3.0'), Decimal('3.5'), Decimal('4.0'), Decimal('4.5'), Decimal('5.0')]
+        
+        if value not in valid_ratings:
+            raise serializers.ValidationError(
+                f"{field_name} must be one of: 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0"
+            )
         return value
 
 # ===========================
