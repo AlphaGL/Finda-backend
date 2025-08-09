@@ -171,19 +171,47 @@ class ProductRatingSerializer(serializers.ModelSerializer):
         read_only_fields = ['user', 'created_at', 'updated_at', 'helpful_count']
     
     def validate_rating(self, value):
-        if not (1.0 <= value <= 5.0):
+        # Convert to Decimal if it's a float
+        if isinstance(value, float):
+            value = Decimal(str(value))
+        
+        if not (Decimal('1.0') <= value <= Decimal('5.0')):
             raise serializers.ValidationError("Rating must be between 1.0 and 5.0")
         return value
-
 
 class ServiceRatingSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
     user_name = serializers.CharField(source='user.username', read_only=True)
-
+    
     rating = serializers.DecimalField(
         max_digits=3,
         decimal_places=1,
         coerce_to_string=False
+    )
+    
+    # Add validation for other rating fields if they exist
+    communication_rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        coerce_to_string=False,
+        required=False,
+        allow_null=True
+    )
+    
+    quality_rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        coerce_to_string=False,
+        required=False,
+        allow_null=True
+    )
+    
+    timeliness_rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        coerce_to_string=False,
+        required=False,
+        allow_null=True
     )
     
     class Meta:
@@ -197,10 +225,37 @@ class ServiceRatingSerializer(serializers.ModelSerializer):
         read_only_fields = ['user', 'created_at', 'updated_at', 'helpful_count']
     
     def validate_rating(self, value):
-        if not (1.0 <= value <= 5.0):
+        # Convert to Decimal if it's a float
+        if isinstance(value, float):
+            value = Decimal(str(value))
+        
+        if not (Decimal('1.0') <= value <= Decimal('5.0')):
             raise serializers.ValidationError("Rating must be between 1.0 and 5.0")
         return value
-
+    
+    def validate_communication_rating(self, value):
+        if value is not None:
+            if isinstance(value, float):
+                value = Decimal(str(value))
+            if not (Decimal('1.0') <= value <= Decimal('5.0')):
+                raise serializers.ValidationError("Communication rating must be between 1.0 and 5.0")
+        return value
+    
+    def validate_quality_rating(self, value):
+        if value is not None:
+            if isinstance(value, float):
+                value = Decimal(str(value))
+            if not (Decimal('1.0') <= value <= Decimal('5.0')):
+                raise serializers.ValidationError("Quality rating must be between 1.0 and 5.0")
+        return value
+    
+    def validate_timeliness_rating(self, value):
+        if value is not None:
+            if isinstance(value, float):
+                value = Decimal(str(value))
+            if not (Decimal('1.0') <= value <= Decimal('5.0')):
+                raise serializers.ValidationError("Timeliness rating must be between 1.0 and 5.0")
+        return value
 
 # ===========================
 #  PRODUCT SERIALIZERS
