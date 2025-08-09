@@ -170,6 +170,7 @@ CSRF_COOKIE_SAMESITE = 'None'
 CSRF_COOKIE_SECURE = True
 # CORS Settings
 CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:5173",
     "https://finda-api-chatbot.vercel.app",
     "https://finda-six.vercel.app",
     "https://www.finda-six.vercel.app",
