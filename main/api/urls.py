@@ -102,12 +102,12 @@ urlpatterns = [
     #  NESTED PRODUCT RATINGS
     # ===========================
     path(
-        "products/<int:product_pk>/ratings/",
+        "products/<slug:product_slug>/ratings/",
         product_rating_list,
         name="productrating-list"
     ),
     path(
-        "products/<int:product_pk>/ratings/<int:pk>/",
+        "products/<slug:product_slug>/ratings/<int:pk>/",
         product_rating_detail,
         name="productrating-detail"
     ),
@@ -116,12 +116,12 @@ urlpatterns = [
     #  NESTED SERVICE RATINGS
     # ===========================
     path(
-        "services/<int:service_pk>/ratings/",
+        "services/<slug:service_slug>/ratings/",
         service_rating_list,
         name="servicerating-list"
     ),
     path(
-        "services/<int:service_pk>/ratings/<int:pk>/",
+        "services/<slug:service_slug>/ratings/<int:pk>/",
         service_rating_detail,
         name="servicerating-detail"
     ),

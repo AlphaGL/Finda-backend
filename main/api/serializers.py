@@ -155,6 +155,12 @@ class ProductRatingSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
     user_name = serializers.CharField(source='user.username', read_only=True)
     
+    rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        coerce_to_string=False
+    )
+    
     class Meta:
         model = ProductRating
         fields = [
@@ -173,6 +179,12 @@ class ProductRatingSerializer(serializers.ModelSerializer):
 class ServiceRatingSerializer(serializers.ModelSerializer):
     user_details = UserSerializer(source='user', read_only=True)
     user_name = serializers.CharField(source='user.username', read_only=True)
+
+    rating = serializers.DecimalField(
+        max_digits=3,
+        decimal_places=1,
+        coerce_to_string=False
+    )
     
     class Meta:
         model = ServiceRating

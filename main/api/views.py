@@ -403,6 +403,7 @@ class HomePageAPIView(APIView):
 # ===========================
 
 class ProductsViewSet(viewsets.ModelViewSet):
+    lookup_field = 'slug'
     """Enhanced Products ViewSet with location system"""
     queryset = Products.objects.select_related(
         'user', 'country', 'state', 'city', 'category'
@@ -523,6 +524,7 @@ class ProductsViewSet(viewsets.ModelViewSet):
 # ===========================
 
 class ServicesViewSet(viewsets.ModelViewSet):
+    lookup_field = 'slug'
     """Enhanced Services ViewSet with location system"""
     queryset = Services.objects.select_related(
         'user', 'country', 'state', 'city', 'category'
@@ -1948,7 +1950,6 @@ class PromoteItemAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-
 class PromotionCallbackAPIView(APIView):
     """Handle promotion payment callback"""
     permission_classes = []
@@ -1962,18 +1963,15 @@ class PromotionCallbackAPIView(APIView):
         # This would activate the promotion after successful payment
         
         return Response({'message': 'Promotion callback received'})
-    
-
-
 
 from rest_framework.decorators import api_view
 import cloudinary.uploader
 
 # Products Gallery Upload
 @api_view(['POST'])
-def upload_gallery_images(request, product_id):
+def upload_gallery_images(request, product_slug):
     try:
-        product = Products.objects.get(id=product_id)
+        product = Products.objects.get(slug=product_slug)
         uploaded_urls = []
         
         # Handle multiple file uploads
@@ -2017,9 +2015,9 @@ def upload_gallery_images(request, product_id):
 
 # Services Gallery Upload
 @api_view(['POST'])
-def upload_gallery_service_images(request, service_id):
+def upload_gallery_service_images(request, service_slug):
     try:
-        service = Services.objects.get(id=service_id)  # Fixed: was 'product'
+        service = Services.objects.get(slug=service_slug)  # Fixed: was 'product'
         uploaded_urls = []
         
         # Handle multiple file uploads
@@ -2063,9 +2061,9 @@ def upload_gallery_service_images(request, service_id):
 
 # Delete Product Gallery Image
 @api_view(['DELETE'])
-def delete_product_gallery_image(request, product_id, image_index):
+def delete_product_gallery_image(request, product_slug, image_index):
     try:
-        product = Products.objects.get(id=product_id)
+        product = Products.objects.get(slug=product_slug)
         
         if 0 <= image_index < len(product.gallery_images):
             # Delete from Cloudinary
@@ -2091,9 +2089,9 @@ def delete_product_gallery_image(request, product_id, image_index):
 
 # Delete Service Gallery Image
 @api_view(['DELETE'])
-def delete_service_gallery_image(request, service_id, image_index):
+def delete_service_gallery_image(request, service_slug, image_index):
     try:
-        service = Services.objects.get(id=service_id)
+        service = Services.objects.get(slug=service_slug)
         
         if 0 <= image_index < len(service.gallery_images):
             # Delete from Cloudinary
