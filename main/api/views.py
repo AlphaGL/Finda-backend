@@ -597,14 +597,17 @@ class ServicesViewSet(viewsets.ModelViewSet):
 # ===========================
 #  RATING VIEWSETS
 # ===========================
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 
+# Add this decorator to exempt CSRF for the entire ViewSet
+@method_decorator(csrf_exempt, name='dispatch')
 class ProductRatingViewSet(viewsets.ModelViewSet):
     serializer_class = ProductRatingSerializer
     permission_classes = [IsOwnerOrReadOnly]
     filterset_class = ProductRatingFilter
     
     def get_queryset(self):
-        # Changed from product_pk to product_slug to match your URLs
         product_slug = self.kwargs["product_slug"]
         product = get_object_or_404(Products, slug=product_slug)
         return ProductRating.objects.filter(
@@ -620,7 +623,6 @@ class ProductRatingViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
     
     def perform_create(self, serializer):
-        # Changed from product_pk to product_slug to match your URLs
         product = get_object_or_404(Products, slug=self.kwargs["product_slug"])
         
         # Check if user already rated this product
@@ -634,7 +636,6 @@ class ProductRatingViewSet(viewsets.ModelViewSet):
             for attr, value in serializer.validated_data.items():
                 setattr(existing_rating, attr, value)
             existing_rating.save()
-            # Important: Set the instance on the serializer for proper response
             serializer.instance = existing_rating
         else:
             # Create new rating
@@ -667,13 +668,13 @@ class ProductRatingViewSet(viewsets.ModelViewSet):
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 
+@method_decorator(csrf_exempt, name='dispatch')
 class ServiceRatingViewSet(viewsets.ModelViewSet):
     serializer_class = ServiceRatingSerializer
     permission_classes = [IsOwnerOrReadOnly]
     filterset_class = ServiceRatingFilter
     
     def get_queryset(self):
-        # Changed from service_pk to service_slug to match your URLs
         service_slug = self.kwargs["service_slug"]
         service = get_object_or_404(Services, slug=service_slug)
         return ServiceRating.objects.filter(
@@ -689,7 +690,6 @@ class ServiceRatingViewSet(viewsets.ModelViewSet):
         return [permission() for permission in permission_classes]
     
     def perform_create(self, serializer):
-        # Changed from service_pk to service_slug to match your URLs
         service = get_object_or_404(Services, slug=self.kwargs["service_slug"])
         
         existing_rating = ServiceRating.objects.filter(
@@ -702,7 +702,6 @@ class ServiceRatingViewSet(viewsets.ModelViewSet):
             for attr, value in serializer.validated_data.items():
                 setattr(existing_rating, attr, value)
             existing_rating.save()
-            # Important: Set the instance on the serializer for proper response
             serializer.instance = existing_rating
         else:
             # Create new rating
@@ -733,6 +732,142 @@ class ServiceRatingViewSet(viewsets.ModelViewSet):
             self.perform_create(serializer)
             headers = self.get_success_headers(serializer.data)
             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        
+# class ProductRatingViewSet(viewsets.ModelViewSet):
+#     serializer_class = ProductRatingSerializer
+#     permission_classes = [IsOwnerOrReadOnly]
+#     filterset_class = ProductRatingFilter
+    
+#     def get_queryset(self):
+#         # Changed from product_pk to product_slug to match your URLs
+#         product_slug = self.kwargs["product_slug"]
+#         product = get_object_or_404(Products, slug=product_slug)
+#         return ProductRating.objects.filter(
+#             product=product,
+#             is_active=True
+#         ).select_related('user').order_by('-created_at')
+    
+#     def get_permissions(self):
+#         if self.action in ['list', 'retrieve']:
+#             permission_classes = [AllowAny]
+#         else:
+#             permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
+#         return [permission() for permission in permission_classes]
+    
+#     def perform_create(self, serializer):
+#         # Changed from product_pk to product_slug to match your URLs
+#         product = get_object_or_404(Products, slug=self.kwargs["product_slug"])
+        
+#         # Check if user already rated this product
+#         existing_rating = ProductRating.objects.filter(
+#             product=product, 
+#             user=self.request.user
+#         ).first()
+        
+#         if existing_rating:
+#             # Update existing rating
+#             for attr, value in serializer.validated_data.items():
+#                 setattr(existing_rating, attr, value)
+#             existing_rating.save()
+#             # Important: Set the instance on the serializer for proper response
+#             serializer.instance = existing_rating
+#         else:
+#             # Create new rating
+#             serializer.save(user=self.request.user, product=product)
+    
+#     def create(self, request, *args, **kwargs):
+#         """Override create to handle updates properly"""
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+        
+#         product = get_object_or_404(Products, slug=self.kwargs["product_slug"])
+#         existing_rating = ProductRating.objects.filter(
+#             product=product, 
+#             user=self.request.user
+#         ).first()
+        
+#         if existing_rating:
+#             # Update existing rating
+#             for attr, value in serializer.validated_data.items():
+#                 setattr(existing_rating, attr, value)
+#             existing_rating.save()
+            
+#             # Return updated data
+#             response_serializer = self.get_serializer(existing_rating)
+#             return Response(response_serializer.data, status=status.HTTP_200_OK)
+#         else:
+#             # Create new rating
+#             self.perform_create(serializer)
+#             headers = self.get_success_headers(serializer.data)
+#             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+
+# class ServiceRatingViewSet(viewsets.ModelViewSet):
+#     serializer_class = ServiceRatingSerializer
+#     permission_classes = [IsOwnerOrReadOnly]
+#     filterset_class = ServiceRatingFilter
+    
+#     def get_queryset(self):
+#         # Changed from service_pk to service_slug to match your URLs
+#         service_slug = self.kwargs["service_slug"]
+#         service = get_object_or_404(Services, slug=service_slug)
+#         return ServiceRating.objects.filter(
+#             service=service,
+#             is_active=True
+#         ).select_related('user').order_by('-created_at')
+    
+#     def get_permissions(self):
+#         if self.action in ['list', 'retrieve']:
+#             permission_classes = [AllowAny]
+#         else:
+#             permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
+#         return [permission() for permission in permission_classes]
+    
+#     def perform_create(self, serializer):
+#         # Changed from service_pk to service_slug to match your URLs
+#         service = get_object_or_404(Services, slug=self.kwargs["service_slug"])
+        
+#         existing_rating = ServiceRating.objects.filter(
+#             service=service, 
+#             user=self.request.user
+#         ).first()
+        
+#         if existing_rating:
+#             # Update existing rating
+#             for attr, value in serializer.validated_data.items():
+#                 setattr(existing_rating, attr, value)
+#             existing_rating.save()
+#             # Important: Set the instance on the serializer for proper response
+#             serializer.instance = existing_rating
+#         else:
+#             # Create new rating
+#             serializer.save(user=self.request.user, service=service)
+    
+#     def create(self, request, *args, **kwargs):
+#         """Override create to handle updates properly"""
+#         serializer = self.get_serializer(data=request.data)
+#         serializer.is_valid(raise_exception=True)
+        
+#         service = get_object_or_404(Services, slug=self.kwargs["service_slug"])
+#         existing_rating = ServiceRating.objects.filter(
+#             service=service, 
+#             user=self.request.user
+#         ).first()
+        
+#         if existing_rating:
+#             # Update existing rating
+#             for attr, value in serializer.validated_data.items():
+#                 setattr(existing_rating, attr, value)
+#             existing_rating.save()
+            
+#             # Return updated data
+#             response_serializer = self.get_serializer(existing_rating)
+#             return Response(response_serializer.data, status=status.HTTP_200_OK)
+#         else:
+#             # Create new rating
+#             self.perform_create(serializer)
+#             headers = self.get_success_headers(serializer.data)
+#             return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
 # ===========================
 #  UTILITY VIEWS
