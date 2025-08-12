@@ -1,9 +1,3 @@
-# Build tools
-pip>=24.0
-setuptools>=69.5.1
-wheel>=0.43.0
-
-# Core dependencies
 absl-py==1.4.0
 aio-pika==8.2.3
 aiofiles==24.1.0
@@ -12,25 +6,32 @@ aiohttp==3.8.6
 aiohttp-retry==2.9.1
 aiormq==6.4.2
 aiosignal==1.4.0
+amqp==5.3.1
 APScheduler==3.9.1.post1
 asgiref==3.9.1
 astunparse==1.6.3
 async-timeout==4.0.3
 attrs==22.1.0
 Babel==2.9.1
+beautifulsoup4==4.13.4
 bidict==0.23.1
+billiard==4.2.1
 blis==0.7.11
 boto3==1.39.4
 botocore==1.39.4
 CacheControl==0.12.14
 cachetools==5.5.2
 catalogue==2.0.10
+celery==5.5.3
 certifi==2025.7.9
 cffi==1.17.1
+channels==4.3.1
+channels_redis==4.3.0
 charset-normalizer==3.4.2
-channels>=4.0.0
-# click==8.2.1
-click>=7.1.1,<8.2
+click==8.1.8
+click-didyoumean==0.3.1
+click-plugins==1.1.1.2
+click-repl==0.3.0
 cloudinary==1.44.1
 cloudpickle==2.2.1
 colorama==0.4.6
@@ -39,27 +40,28 @@ coloredlogs==15.0.1
 colorhash==1.2.1
 confection==0.1.5
 confluent-kafka==2.11.0
+cron-descriptor==1.4.5
 cryptography==45.0.5
 cycler==0.12.1
 cymem==2.0.11
 dask==2022.10.2
 dj-database-url==3.0.1
-
-# Django core
 Django==5.2.4
 django-allauth==65.10.0
 django-autoslug==1.9.9
+django-celery-beat==2.8.1
 django-cities-light==3.10.1
 django-cloudinary-storage==0.3.0
+django-cors-headers==4.7.0
 django-countries==7.6.1
-django-cors-headers==4.3.1
 django-filter==25.1
+django-redis==6.0.0
+django-timezone-field==7.1
+django_celery_results==2.6.0
 djangorestframework==3.16.0
-drf-spectacular
-
-# Other dependencies
 dnspython==2.3.0
 docopt==0.6.2
+drf-spectacular==0.28.0
 fbmessenger==6.0.0
 filelock==3.18.0
 fire==0.5.0
@@ -68,7 +70,9 @@ fonttools==4.58.5
 frozenlist==1.7.0
 fsspec==2025.5.1
 future==1.0.0
+fuzzywuzzy==0.18.0
 gast==0.4.0
+git-filter-repo==2.47.0
 google-ai-generativelanguage==0.6.15
 google-api-core==2.25.1
 google-api-python-client==2.176.0
@@ -81,7 +85,7 @@ googleapis-common-protos==1.70.0
 greenlet==3.2.3
 grpcio==1.73.1
 grpcio-status==1.62.3
-gunicorn==20.1.0
+gTTS==2.3.2
 h11==0.16.0
 h5py==3.14.0
 httplib2==0.22.0
@@ -89,9 +93,9 @@ httptools==0.6.4
 huggingface-hub==0.33.2
 humanfriendly==10.0
 idna==3.10
-# REMOVED: JAX and jaxlib (not needed for Django + Rasa)
-# jax==0.4.23
-# jaxlib==0.4.23
+inflection==0.5.1
+jax==0.4.30
+jaxlib==0.4.30
 Jinja2==3.1.6
 jmespath==1.0.1
 joblib==1.2.0
@@ -99,6 +103,7 @@ jsonpickle==3.0.4
 jsonschema==4.17.3
 keras==2.12.0
 kiwisolver==1.4.8
+kombu==5.5.4
 langcodes==3.5.0
 language_data==1.3.0
 libclang==18.1.1
@@ -116,10 +121,7 @@ multidict==5.2.0
 murmurhash==1.0.13
 networkx==2.6.3
 nltk==3.9.1
-
-# FIXED: Compatible with TensorFlow 2.12.0 and Rasa 3.6.16
 numpy==1.23.5
-
 oauthlib==3.3.1
 opt_einsum==3.4.0
 packaging==20.9
@@ -128,11 +130,12 @@ pandas==1.5.3
 partd==1.4.2
 pathlib_abc==0.1.1
 pathy==0.11.0
+Pillow==10.0.0
 pluggy==1.6.0
 portalocker==2.10.1
 preshed==3.0.10
 progressbar2==4.5.0
-prompt-toolkit==3.0.28
+prompt_toolkit==3.0.51
 propcache==0.3.2
 proto-plus==1.26.1
 protobuf==4.23.3
@@ -142,6 +145,7 @@ pyasn1_modules==0.4.2
 pycparser==2.22
 pydantic==1.10.7
 pydot==1.4.2
+pydub==0.25.1
 PyJWT==2.10.1
 pykwalify==1.8.0
 pymongo==4.3.3
@@ -149,6 +153,7 @@ pyparsing==3.2.3
 pyreadline3==3.5.4
 pyrsistent==0.20.0
 python-crfsuite==0.9.11
+python-crontab==3.3.0
 python-dateutil==2.8.2
 python-decouple==3.8
 python-dotenv==1.1.1
@@ -156,14 +161,12 @@ python-engineio==4.12.2
 python-socketio==5.13.0
 python-utils==3.9.1
 pytz==2022.7.1
+pywin32==310
 PyYAML==6.0.2
 questionary==1.10.0
 randomname==0.1.5
-
-# Rasa and related
 rasa==3.6.16
 rasa-sdk==3.6.2
-
 redis==4.6.0
 regex==2022.10.31
 requests==2.32.4
@@ -189,9 +192,12 @@ six==1.17.0
 sklearn-crfsuite==0.3.6
 slack_sdk==3.36.0
 smart-open==6.4.0
+sounddevice==0.5.2
+soupsieve==2.7
 spacy==3.5.3
 spacy-legacy==3.0.12
 spacy-loggers==1.0.5
+SpeechRecognition==3.10.0
 SQLAlchemy==1.4.54
 sqlparse==0.4.3
 srsly==2.5.1
@@ -200,15 +206,13 @@ structlog-sentry==2.1.0
 sympy==1.14.0
 tabulate==0.9.0
 tarsafe==0.0.4
-
-# TensorFlow - FIXED: Changed from just "tensorflow" to specific version
-tensorflow==2.12.0
 tensorboard==2.12.3
 tensorboard-data-server==0.7.2
+tensorflow==2.12.0
 tensorflow-estimator==2.12.0
 tensorflow-hub==0.13.0
-tensorflow-io-gcs-filesystem==0.32.0
-
+tensorflow-intel==2.12.0
+tensorflow-io-gcs-filesystem==0.31.0
 termcolor==3.1.0
 terminaltables==3.1.10
 thinc==8.1.12
@@ -229,6 +233,7 @@ ujson==5.10.0
 Unidecode==1.4.0
 uritemplate==4.2.0
 urllib3==2.5.0
+vine==5.1.0
 wasabi==1.1.3
 wcwidth==0.2.13
 webexteamssdk==1.6.1
@@ -238,15 +243,3 @@ whitenoise==6.9.0
 wrapt==1.14.1
 wsproto==1.2.0
 yarl==1.20.1
-
-# Add these lines to your existing requirements.txt file
-SpeechRecognition>=3.10.0
-pydub>=0.25.1
-sounddevice>=0.4.8
-celery>=5.3.0
-django-redis>=5.2.0
-kombu>=5.3.0
-billiard>=4.1.0
-vine>=5.0.0
-gtts==2.3.2
-Pillow==10.0.0
