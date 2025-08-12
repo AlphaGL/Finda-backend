@@ -28,6 +28,7 @@ catalogue==2.0.10
 certifi==2025.7.9
 cffi==1.17.1
 charset-normalizer==3.4.2
+channels>=4.0.0
 # click==8.2.1
 click>=7.1.1,<8.2
 cloudinary==1.44.1
