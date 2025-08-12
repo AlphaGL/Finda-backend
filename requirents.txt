@@ -50,8 +50,6 @@ dj-database-url==3.0.1
 Django==5.2.4
 django-allauth==65.10.0
 django-autoslug==1.9.9
-django-celery-beat>=2.6.0
-django-celery-results>=2.5.0
 django-cities-light==3.10.1
 django-cloudinary-storage==0.3.0
 django-countries==7.6.1
