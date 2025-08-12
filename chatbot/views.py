@@ -1,819 +1,1064 @@
-# views.py - WORLD-CLASS AI SHOPPING ASSISTANT
-from rest_framework.decorators import api_view, permission_classes, parser_classes
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, JSONParser
-from rest_framework import status
-from rest_framework.authtoken.views import ObtainAuthToken
-from rest_framework.authtoken.models import Token
-from django.contrib.auth import authenticate
-from django.core.cache import cache
-from django.utils import timezone
-from django.db import transaction
-from django.http import JsonResponse
-from io import BytesIO
-import logging
+# ai_chatbot/views.py
 import json
-import time
-from datetime import timedelta
+import logging
+import asyncio
+from datetime import datetime, timedelta
+from typing import Dict, List, Any, Optional
 
-# Import enhanced modules - these should be imported here, not in __init__.py
-from .models import ChatMessage, UserVoiceSettings
-from .serializers import ChatMessageSerializer, VoiceSettingsSerializer
-from .enhanced_conversation_manager import ConversationFlowManager, ConversationAnalytics
-from .gemini_client import (
-    send_to_gemini, analyze_image_with_gemini, transcribe_audio, 
-    generate_voice_response, get_fallback_response
+from django.http import JsonResponse, HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.utils.decorators import method_decorator
+from django.views.generic import View, TemplateView
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render, get_object_or_404
+from django.core.cache import cache
+from django.conf import settings
+from django.db import transaction
+
+from rest_framework import status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from django.views import View
+
+from .models import (
+    ChatSession, ChatMessage, SearchQuery, SearchResult, 
+    UserFeedback, ChatAnalytics, BotConfiguration
 )
-from .utils import (
-    search_finda_database, format_finda_results, generate_no_results_response,
-    search_by_category, format_categories_response, get_trending_items,
-    search_products_by_analysis, validate_search_input, log_search_analytics
+from .serializers import (
+    ChatSessionSerializer, ChatMessageSerializer, UserFeedbackSerializer
 )
-from .external_search_enhanced import (
-    search_external_stores, format_external_results, get_price_comparison
-)
-from .chatbot_prompts import (
-    get_system_prompt, get_greeting, detect_user_intent, 
-    format_response_template, get_error_message
-)
+from .services.smart_router import SmartChatbotRouter
+from .utils import ChatSessionManager
+from .utils import ChatAnalyticsManager
+from channels.db import database_sync_to_async
+from asgiref.sync import sync_to_async
 
 logger = logging.getLogger(__name__)
 
-class CustomAuthToken(ObtainAuthToken):
-    """Enhanced authentication with user preferences"""
+
+class ChatInterfaceView(TemplateView):
+    """Main chat interface view"""
+    template_name = 'ai_chatbot/chat_interface.html'
     
-    def post(self, request, *args, **kwargs):
-        try:
-            serializer = self.serializer_class(data=request.data,
-                                             context={'request': request})
-            serializer.is_valid(raise_exception=True)
-            user = serializer.validated_data['user']
-            token, created = Token.objects.get_or_create(user=user)
-            
-            # Initialize user settings if needed
-            voice_settings, _ = UserVoiceSettings.objects.get_or_create(
-                user=user,
-                defaults={
-                    'preferred_language': 'en',
-                    'voice_speed': 1.0,
-                    'voice_enabled': True
-                }
-            )
-            
-            return Response({
-                'token': token.key,
-                'user_id': user.pk,
-                'username': user.username,
-                'voice_settings': {
-                    'language': voice_settings.preferred_language,
-                    'speed': voice_settings.voice_speed,
-                    'enabled': voice_settings.voice_enabled
-                }
-            })
-            
-        except Exception as e:
-            logger.error(f"Authentication error: {str(e)}")
-            return Response({
-                'error': 'Authentication failed',
-                'detail': 'Please check your credentials'
-            }, status=status.HTTP_401_UNAUTHORIZED)
-
-
-@api_view(['POST', 'GET'])
-@permission_classes([IsAuthenticated])
-def chat_api(request):
-    """
-    WORLD-CLASS Chat API with comprehensive enhancements
-    Handles all text-based conversations with global search integration
-    """
-    start_time = time.time()
-    
-    try:
-        user = request.user
-        user_id = str(user.id)
-        
-        # Rate limiting
-        rate_limit_key = f"chat_rate_limit_{user_id}"
-        request_count = cache.get(rate_limit_key, 0)
-        
-        if request_count >= 60:  # 60 requests per hour
-            return Response({
-                'error': 'Rate limit exceeded',
-                'message': 'Please wait a moment before sending another message.',
-                'retry_after': 3600
-            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-        
-        cache.set(rate_limit_key, request_count + 1, timeout=3600)
-        
-        if request.method == 'GET':
-            return get_chat_history(request, user)
-        
-        # Process POST request
-        user_message = request.data.get('message', '').strip()
-        
-        if not user_message:
-            return Response({
-                'error': 'Message required',
-                'message': 'Please provide a message to continue our conversation.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Validate input
-        is_valid, validated_message = validate_search_input(user_message)
-        if not is_valid:
-            return Response({
-                'error': 'Invalid input',
-                'message': 'Please provide a valid search query.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Initialize conversation manager
-        conversation_manager = ConversationFlowManager(user_id)
-        
-        # Log conversation event
-        ConversationAnalytics.log_conversation_event(
-            user_id, 'message_received', {'message_length': len(user_message)}
-        )
-        
-        # Process message and determine strategy
-        strategy = conversation_manager.process_message(user_message)
-        
-        logger.info(f"🤖 User {user_id} | Intent: {strategy['intent']} | Confidence: {strategy['confidence']}")
-        
-        # Execute strategy
-        response_data = execute_conversation_strategy(
-            strategy, user_message, user, conversation_manager
-        )
-        
-        # Generate AI response with context
-        ai_response = generate_contextual_ai_response(
-            user_message, strategy, response_data, user, conversation_manager
-        )
-        
-        # Store conversation in database
-        try:
-            with transaction.atomic():
-                message_obj = ChatMessage.objects.create(
-                    user=user,
-                    user_input=user_message[:500],  # Limit input length
-                    bot_response=ai_response[:2000],  # Limit response length
-                    timestamp=timezone.now()
-                )
-                
-                # Update conversation context
-                conversation_manager.add_exchange(user_message, ai_response)
-                
-        except Exception as db_error:
-            logger.error(f"Database storage error: {str(db_error)}")
-            # Continue without storing if DB fails
-        
-        # Log analytics
-        ConversationAnalytics.log_conversation_event(
-            user_id, 'response_generated', {
-                'intent': strategy['intent'],
-                'response_length': len(ai_response),
-                'processing_time': time.time() - start_time
-            }
-        )
-        
-        # Log search analytics if applicable
-        if strategy.get('search_terms'):
-            results_count = len(response_data.get('finda_results', []))
-            log_search_analytics(strategy['search_terms'], results_count, user_id)
-        
-        return Response({
-            'response': ai_response,
-            'intent': strategy['intent'],
-            'confidence': strategy['confidence'],
-            'context_aware': strategy['context_aware'],
-            'finda_results': response_data.get('finda_results', []),
-            'external_results': response_data.get('external_results', []),
-            'categories': response_data.get('categories', []),
-            'suggestions': response_data.get('suggestions', []),
-            'processing_time': round(time.time() - start_time, 2),
-            'message_id': getattr(message_obj, 'id', None)
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.error(f"Chat API error: {str(e)}")
-        
-        # Fallback response
-        fallback_response = get_fallback_response('default')
-        
-        return Response({
-            'response': fallback_response,
-            'intent': 'error_recovery',
-            'confidence': 0.1,
-            'error': 'Technical issue occurred',
-            'processing_time': round(time.time() - start_time, 2)
-        }, status=status.HTTP_200_OK)
-
-
-def execute_conversation_strategy(strategy, user_message, user, conversation_manager):
-    """
-    Execute the determined conversation strategy with comprehensive error handling
-    """
-    response_data = {
-        'finda_results': [],
-        'external_results': [],
-        'categories': [],
-        'suggestions': [],
-        'selected_item': None
-    }
-    
-    try:
-        intent = strategy['intent']
-        
-        # CORE STRATEGY: Database-first approach
-        if intent == 'perform_finda_search':
-            search_terms = strategy.get('search_terms', user_message)
-            logger.info(f"🔍 Performing Finda search: '{search_terms}'")
-            
-            # Search Finda database first (PRIORITY)
-            finda_results = search_finda_database(search_terms, limit=8)
-            response_data['finda_results'] = finda_results
-            
-            # Update conversation context
-            conversation_manager.update_after_search(search_terms, finda_results)
-            
-            if not finda_results:
-                # Try category-based search as fallback
-                category_results = search_by_category(search_terms, limit=5)
-                response_data['finda_results'] = category_results
-        
-        elif intent == 'show_categories':
-            from main.models import Category
-            try:
-                categories = Category.objects.filter(
-                    is_active=True, parent=None
-                ).order_by('sort_order', 'name')[:15]
-                response_data['categories'] = list(categories)
-                conversation_manager.update_after_categories(categories)
-            except Exception as cat_error:
-                logger.error(f"Categories error: {str(cat_error)}")
-        
-        elif intent == 'search_category':
-            selected_category = strategy.get('selected_category', user_message)
-            category_results = search_by_category(selected_category, limit=8)
-            response_data['finda_results'] = category_results
-            conversation_manager.update_after_search(selected_category, category_results)
-        
-        elif intent == 'perform_external_search':
-            # Only perform external search when explicitly requested
-            search_terms = strategy.get('search_terms') or strategy['context_data'].get('last_search_query', user_message)
-            logger.info(f"🌐 Performing EXTERNAL search: '{search_terms}'")
-            
-            try:
-                external_results = search_external_stores(search_terms, limit=5)
-                response_data['external_results'] = external_results
-                
-                # Also get price comparison if Finda results exist
-                finda_results = strategy['context_data'].get('last_search_results', [])
-                if finda_results:
-                    price_comparison = get_price_comparison(finda_results, external_results)
-                    response_data['price_comparison'] = price_comparison
-                    
-            except Exception as ext_error:
-                logger.error(f"External search error: {str(ext_error)}")
-                response_data['external_results'] = []
-        
-        elif intent == 'show_item_details':
-            selected_item = strategy.get('selected_item')
-            if selected_item:
-                response_data['selected_item'] = selected_item
-        
-        elif intent == 'get_trending':
-            trending_items = get_trending_items(limit=6)
-            response_data['finda_results'] = trending_items
-        
-        # Set external search as pending if user declined
-        elif intent == 'decline_external_search':
-            conversation_manager.clear_context()
-        
-        # Set up external search if user wants it
-        elif intent in ['request_external_search', 'confirm_external_search']:
-            search_query = strategy['context_data'].get('last_search_query', user_message)
-            conversation_manager.set_external_pending(search_query)
-            
-            # Actually perform the search
-            try:
-                external_results = search_external_stores(search_query, limit=6)
-                response_data['external_results'] = external_results
-            except Exception as ext_error:
-                logger.error(f"External search execution error: {str(ext_error)}")
-        
-        return response_data
-        
-    except Exception as e:
-        logger.error(f"Strategy execution error: {str(e)}")
-        return response_data
-
-
-def generate_contextual_ai_response(user_message, strategy, response_data, user, conversation_manager):
-    """
-    Generate AI response using Gemini with context and enhanced prompts
-    """
-    try:
-        intent = strategy['intent']
-        
-        # Prepare context for AI
-        context_info = ""
-        
-        # Include Finda results in context
-        if response_data.get('finda_results'):
-            results_summary = []
-            for i, item in enumerate(response_data['finda_results'][:5], 1):
-                try:
-                    is_product = hasattr(item, 'product_name')
-                    name = getattr(item, 'product_name' if is_product else 'service_name', 'Item')
-                    price = getattr(item, 'product_price' if is_product else 'starting_price', 0)
-                    location = item.get_full_location() if hasattr(item, 'get_full_location') else 'Available'
-                    results_summary.append(f"{i}. {name} - ₦{price:,.2f} - {location}")
-                except Exception as item_error:
-                    logger.error(f"Item formatting error: {str(item_error)}")
-                    continue
-            
-            if results_summary:
-                context_info += f"\nFINDA SEARCH RESULTS for '{strategy.get('search_terms', user_message)}':\n"
-                context_info += "\n".join(results_summary)
-                context_info += f"\n\nTotal: {len(response_data['finda_results'])} items found on Finda marketplace."
-        
-        # Include external results in context if available
-        if response_data.get('external_results'):
-            context_info += f"\n\nEXTERNAL SEARCH RESULTS (as bonus options):\n"
-            ext_summary = []
-            for i, item in enumerate(response_data['external_results'][:3], 1):
-                try:
-                    name = item.get('name', 'Item')
-                    price = item.get('price', 'Price available')
-                    source = item.get('source', 'External store')
-                    ext_summary.append(f"{i}. {name} - {price} - {source}")
-                except:
-                    continue
-            context_info += "\n".join(ext_summary)
-        
-        # Include categories in context
-        if response_data.get('categories'):
-            cat_names = []
-            for cat in response_data['categories'][:10]:
-                try:
-                    cat_names.append(getattr(cat, 'name', str(cat)))
-                except:
-                    continue
-            if cat_names:
-                context_info += f"\n\nAVAILABLE CATEGORIES: {', '.join(cat_names)}"
-        
-        # Get appropriate system prompt based on intent
-        if intent in ['perform_external_search', 'request_external_search', 'confirm_external_search']:
-            system_prompt = get_system_prompt('external')
-        else:
-            system_prompt = get_system_prompt('main')
-        
-        # Build conversation history for context
-        conversation_history = []
-        
-        # Add system prompt as first message
-        conversation_history.append({
-            "author": "assistant",
-            "content": system_prompt
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({
+            'page_title': 'AI Shopping Assistant',
+            'websocket_url': self._get_websocket_url(),
+            'supported_languages': self._get_supported_languages(),
+            'max_file_size_mb': getattr(settings, 'CHATBOT_SETTINGS', {}).get('MAX_FILE_SIZE_MB', 10)
         })
-        
-        # Add context information if available
-        if context_info:
-            conversation_history.append({
-                "author": "assistant", 
-                "content": f"CONTEXT: {context_info.strip()}"
-            })
-        
-        # Add recent conversation history from context
-        recent_history = strategy.get('context_data', {}).get('conversation_history', [])
-        for exchange in recent_history[-3:]:  # Last 3 exchanges
-            try:
-                conversation_history.append({
-                    "author": "user",
-                    "content": exchange.get('user', '')
-                })
-                conversation_history.append({
-                    "author": "assistant", 
-                    "content": exchange.get('bot', '')
-                })
-            except:
-                continue
-        
-        # Generate enhanced user message with intent context
-        enhanced_message = user_message
-        
-        if intent == 'perform_finda_search' and response_data.get('finda_results'):
-            enhanced_message = f"User searched for: '{strategy.get('search_terms', user_message)}'. Show the Finda results enthusiastically and offer external search as bonus option."
-        elif intent == 'perform_external_search':
-            enhanced_message = f"User wants external search results for: '{strategy.get('search_terms', user_message)}'. Show external results but remind them Finda is better for local shopping."
-        elif intent == 'show_categories':
-            enhanced_message = "User wants to browse categories. Show them available categories enthusiastically."
-        elif intent == 'decline_external_search':
-            enhanced_message = "User declined external search and wants to stick with Finda. Praise their choice and ask what else they need."
-        
-        # Send to Gemini AI
-        try:
-            ai_response = send_to_gemini(conversation_history, enhanced_message, max_retries=3)
-            
-            if ai_response and len(ai_response.strip()) > 10:
-                return ai_response
-            else:
-                raise Exception("AI response too short or empty")
-                
-        except Exception as ai_error:
-            logger.error(f"Gemini API error: {str(ai_error)}")
-            
-            # Generate fallback response based on intent and data
-            return generate_intelligent_fallback(intent, response_data, user_message, strategy)
-        
-    except Exception as e:
-        logger.error(f"AI response generation error: {str(e)}")
-        return generate_intelligent_fallback(intent, response_data, user_message, strategy)
-
-
-def generate_intelligent_fallback(intent, response_data, user_message, strategy):
-    """
-    Generate intelligent fallback responses when AI is unavailable
-    """
-    try:
-        if intent == 'perform_finda_search':
-            if response_data.get('finda_results'):
-                formatted_results = format_finda_results(
-                    response_data['finda_results'], 
-                    strategy.get('search_terms', user_message)
-                )
-                if formatted_results:
-                    return formatted_results
-            else:
-                return generate_no_results_response(strategy.get('search_terms', user_message))
-        
-        elif intent == 'show_categories':
-            return format_categories_response()
-        
-        elif intent == 'perform_external_search':
-            if response_data.get('external_results'):
-                return format_external_results(
-                    response_data['external_results'],
-                    strategy.get('search_terms', user_message)
-                )
-            else:
-                return "I'm checking external stores but having connectivity issues. Let's focus on our amazing Finda marketplace instead! What can I find for you?"
-        
-        elif intent == 'decline_external_search':
-            return "Perfect choice! Staying with Finda means faster delivery, direct seller contact, and supporting local businesses. What else can I help you find? 🛍️"
-        
-        elif intent == 'greeting':
-            return get_greeting('first_time_user')
-        
-        elif intent == 'thanks':
-            return "You're very welcome! I'm always here to help you find the best deals on Finda. What else can I assist you with? 😊"
-        
-        else:
-            return "I'm here to help you find amazing products and services on Finda! Try searching for specific items, browsing categories, or asking me anything about our marketplace. What are you looking for today? 🛍️"
-            
-    except Exception as e:
-        logger.error(f"Fallback generation error: {str(e)}")
-        return "I'm your Finda shopping assistant! Search for products, browse categories, or ask me anything. What can I help you find today?"
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-@parser_classes([MultiPartParser])
-def voice_chat_api(request):
-    """
-    ENHANCED Voice Chat API with comprehensive audio processing
-    """
-    start_time = time.time()
+        return context
     
-    try:
-        user = request.user
-        audio_file = request.FILES.get('audio')
-        
-        if not audio_file:
-            return Response({
-                'error': 'Audio file required',
-                'message': 'Please provide an audio file for voice chat.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        logger.info(f"🎤 Processing voice message from user {user.id}")
-        
-        # Rate limiting for voice
-        rate_limit_key = f"voice_rate_limit_{user.id}"
-        request_count = cache.get(rate_limit_key, 0)
-        
-        if request_count >= 20:  # 20 voice messages per hour
-            return Response({
-                'error': 'Voice rate limit exceeded',
-                'message': 'Please wait before sending another voice message.',
-                'retry_after': 3600
-            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-        
-        cache.set(rate_limit_key, request_count + 1, timeout=3600)
-        
-        # Transcribe audio
+    def _get_websocket_url(self):
+        """Get WebSocket URL for real-time chat"""
+        scheme = 'wss' if self.request.is_secure() else 'ws'
+        host = self.request.get_host()
+        return f"{scheme}://{host}/ws/chat/"
+    
+    def _get_supported_languages(self):
+        """Get supported languages for the chat"""
+        return {
+            'en': 'English',
+            'fr': 'French', 
+            'es': 'Spanish',
+            'de': 'German',
+            'pt': 'Portuguese'
+        }
+
+@method_decorator(csrf_exempt, name='dispatch')
+class ChatAPIView(View):
+    """Chat API endpoint with proper async support"""
+    
+    def __init__(self):
+        super().__init__()
+        self.router = SmartChatbotRouter()
+        self.session_manager = ChatSessionManager()
+        self.analytics = ChatAnalyticsManager()
+    
+    def get(self, request):
+        """Handle GET requests - return API info"""
+        return JsonResponse({
+            'success': True,
+            'message': 'Finda Chat API is running',
+            'endpoints': {
+                'chat': 'POST /chatbot/api/chat/ - Send chat messages',
+                'methods': ['POST'],
+                'supported_types': ['text', 'image', 'voice']
+            },
+            'version': '1.0.0'
+        })
+    
+    def post(self, request):
+        """Handle POST requests synchronously but run async operations with asyncio.run()"""
         try:
-            transcript = transcribe_audio(audio_file)
+            # Parse request data
+            if request.content_type == 'application/json':
+                data = json.loads(request.body)
+            else:
+                data = request.POST.dict()
             
-            if not transcript:
-                return Response({
-                    'error': 'Transcription failed',
-                    'message': 'Could not understand the audio. Please try speaking clearly or use text instead.',
-                    'voice_response_url': None
-                }, status=status.HTTP_400_BAD_REQUEST)
-                
-        except Exception as transcribe_error:
-            logger.error(f"Transcription error: {str(transcribe_error)}")
-            return Response({
-                'error': 'Audio processing failed',
-                'message': 'Technical issue processing your voice message. Please try again or use text.',
-                'voice_response_url': None
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            message_text = data.get('message', '').strip()
+            message_type = data.get('message_type', 'text')
+            session_id = data.get('session_id')
+            file_data = request.FILES.get('file') if message_type in ['image', 'voice'] else None
+            
+            # Validate input
+            if not message_text and not file_data:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Message text or file is required'
+                }, status=400)
+            
+            # Run the async processing
+            result = asyncio.run(self._process_chat_async(
+                request, message_text, message_type, session_id, file_data, data
+            ))
+            
+            return JsonResponse(result)
+            
+        except json.JSONDecodeError:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid JSON data'
+            }, status=400)
         
-        logger.info(f"🎤 Transcribed: '{transcript}'")
+        except Exception as e:
+            logger.error(f"Error processing chat message: {str(e)}")
+            return JsonResponse({
+                'success': False,
+                'error': 'An error occurred while processing your message',
+                'message': 'I apologize, but I encountered an error. Please try again.',
+                'timestamp': datetime.now().isoformat()
+            }, status=500)
+    
+    async def _process_chat_async(self, request, message_text, message_type, session_id, file_data, data):
+        """Process chat message asynchronously"""
+        # Get or create chat session
+        chat_session = await self._get_or_create_session(request, session_id)
         
-        # Process the transcribed message using regular chat logic
-        conversation_manager = ConversationFlowManager(str(user.id))
-        strategy = conversation_manager.process_message(transcript)
-        
-        # Execute strategy
-        response_data = execute_conversation_strategy(
-            strategy, transcript, user, conversation_manager
+        # Save user message
+        user_message = await self._save_user_message(
+            chat_session, message_text, message_type, file_data
         )
         
-        # Generate AI response
-        ai_response = generate_contextual_ai_response(
-            transcript, strategy, response_data, user, conversation_manager
+        # Build context
+        context = await self._build_conversation_context(chat_session, request)
+        
+        # Process with router
+        processing_result = await self.router.process_message(
+            message_text, message_type, file_data, context
         )
         
-        # Generate voice response
-        voice_response_url = None
-        try:
-            user_settings = UserVoiceSettings.objects.get(user=user)
-            if user_settings.voice_enabled:
-                voice_response_url = generate_voice_response(
-                    ai_response, 
-                    language=user_settings.preferred_language,
-                    slow=(user_settings.voice_speed < 1.0)
-                )
-        except UserVoiceSettings.DoesNotExist:
-            # Create default settings
-            UserVoiceSettings.objects.create(user=user)
-            voice_response_url = generate_voice_response(ai_response)
-        except Exception as voice_error:
-            logger.error(f"Voice generation error: {str(voice_error)}")
+        # Save bot response
+        bot_message = await self._save_bot_response(
+            chat_session, processing_result, user_message
+        )
         
-        # Store in database
-        try:
-            with transaction.atomic():
-                message_obj = ChatMessage.objects.create(
-                    user=user,
-                    user_input=transcript[:500],
-                    bot_response=ai_response[:2000],
-                    is_voice_message=True,
-                    audio_file=audio_file,
-                    transcript=transcript,
-                    voice_response_url=voice_response_url or '',
-                    timestamp=timezone.now()
-                )
-                
-                conversation_manager.add_exchange(transcript, ai_response)
-                
-        except Exception as db_error:
-            logger.error(f"Voice message DB storage error: {str(db_error)}")
+        # Update analytics
+        await self._update_analytics(processing_result, chat_session)
         
-        return Response({
-            'transcript': transcript,
-            'response': ai_response,
-            'voice_response_url': voice_response_url,
-            'intent': strategy['intent'],
-            'confidence': strategy['confidence'],
-            'finda_results': response_data.get('finda_results', []),
-            'processing_time': round(time.time() - start_time, 2),
-            'message_id': getattr(message_obj, 'id', None)
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.error(f"Voice chat API error: {str(e)}")
-        return Response({
-            'error': 'Voice processing failed',
-            'message': 'Technical issue with voice processing. Please try text chat.',
-            'processing_time': round(time.time() - start_time, 2)
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-@parser_classes([MultiPartParser])
-def image_search_api(request):
-    """
-    ENHANCED Image Search API with comprehensive image analysis
-    """
-    start_time = time.time()
-    
-    try:
-        user = request.user
-        image_file = request.FILES.get('image')
-        user_query = request.data.get('query', 'What products are in this image?')
-        
-        if not image_file:
-            return Response({
-                'error': 'Image file required',
-                'message': 'Please provide an image file for visual search.'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        logger.info(f"📸 Processing image search from user {user.id}")
-        
-        # Rate limiting for images
-        rate_limit_key = f"image_rate_limit_{user.id}"
-        request_count = cache.get(rate_limit_key, 0)
-        
-        if request_count >= 10:  # 10 image searches per hour
-            return Response({
-                'error': 'Image rate limit exceeded',
-                'message': 'Please wait before uploading another image.',
-                'retry_after': 3600
-            }, status=status.HTTP_429_TOO_MANY_REQUESTS)
-        
-        cache.set(rate_limit_key, request_count + 1, timeout=3600)
-        
-        # Analyze image with Gemini Vision
-        try:
-            analysis_result = analyze_image_with_gemini(image_file, user_query)
-            
-            if not analysis_result or len(analysis_result.strip()) < 10:
-                return Response({
-                    'error': 'Image analysis failed',
-                    'message': 'Could not analyze the image. Please try a clearer image or describe what you\'re looking for.',
-                    'analysis': None,
-                    'finda_results': []
-                }, status=status.HTTP_400_BAD_REQUEST)
-                
-        except Exception as analysis_error:
-            logger.error(f"Image analysis error: {str(analysis_error)}")
-            return Response({
-                'error': 'Image processing failed',
-                'message': 'Technical issue analyzing your image. Please try again or use text search.',
-                'analysis': None,
-                'finda_results': []
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-        logger.info(f"📸 Image analysis completed: {analysis_result[:100]}...")
-        
-        # Search Finda database based on analysis
-        finda_results = search_products_by_analysis(analysis_result, limit=6)
-        
-        # Initialize conversation manager and update context
-        conversation_manager = ConversationFlowManager(str(user.id))
-        
-        if finda_results:
-            conversation_manager.update_after_search("image search", finda_results)
-        
-        # Generate contextual response
-        enhanced_query = f"User uploaded an image. Analysis: {analysis_result}. Found {len(finda_results)} matching items on Finda."
-        
-        strategy = {
-            'intent': 'image_search_response',
-            'confidence': 0.9,
-            'context_aware': True,
-            'search_terms': None
+        # Prepare response data
+        response_data = {
+            'success': processing_result.get('success', True),
+            'message_id': str(bot_message.id),
+            'session_id': str(chat_session.id),
+            'response': processing_result.get('final_response', ''),
+            'message_type': 'text',
+            'metadata': {
+                'processing_time': processing_result.get('metadata', {}).get('processing_time', 0),
+                'search_strategy': processing_result.get('search_strategy', 'unknown'),
+                'confidence_score': processing_result.get('metadata', {}).get('confidence_score', 0),
+                'services_used': processing_result.get('metadata', {}).get('services_used', [])
+            },
+            'search_results': {
+                'local': {
+                    'products': processing_result.get('local_results', {}).get('products', [])[:5],
+                    'services': processing_result.get('local_results', {}).get('services', [])[:5],
+                    'total': processing_result.get('local_results', {}).get('total_results', 0)
+                },
+                'external': {
+                    'products': processing_result.get('external_results', {}).get('products', [])[:5],
+                    'total': processing_result.get('external_results', {}).get('total_found', 0)
+                }
+            },
+            'suggested_actions': await self._generate_suggested_actions(processing_result),
+            'timestamp': datetime.now().isoformat()
         }
         
-        response_data = {'finda_results': finda_results}
+        # Add TTS if requested
+        if data.get('enable_tts', False):
+            response_data['tts_audio'] = await self._generate_tts_response(
+                processing_result.get('final_response', '')
+            )
         
-        ai_response = generate_contextual_ai_response(
-            enhanced_query, strategy, response_data, user, conversation_manager
+        return response_data
+
+    @sync_to_async
+    def _get_or_create_session(self, request, session_id):
+        """Get existing session or create new one"""
+        if session_id:
+            try:
+                session = ChatSession.objects.select_related('user').get(
+                    id=session_id,
+                    status='active'
+                )
+                session.last_activity = datetime.now()
+                session.save()
+                return session
+            except ChatSession.DoesNotExist:
+                pass
+        
+        # Create new session
+        session_data = {
+            'session_id': self.session_manager.generate_session_id(),
+            'ip_address': self._get_client_ip(request),
+            'user_agent': request.META.get('HTTP_USER_AGENT', '')[:500],
+            'device_info': self._extract_device_info(request)
+        }
+        
+        if request.user.is_authenticated:
+            session_data['user'] = request.user
+        
+        return ChatSession.objects.create(**session_data)
+
+    @sync_to_async
+    def _save_user_message(self, session, message, message_type, file_data=None):
+        """Save user message to database"""
+        message_data = {
+            'chat_session': session,
+            'sender_type': 'user',
+            'message_type': message_type,
+            'content': message,
+            'context_data': {}
+        }
+        
+        if file_data and message_type == 'image':
+            message_data['image'] = file_data
+        elif file_data and message_type == 'voice':
+            message_data['voice_file'] = file_data
+        
+        return ChatMessage.objects.create(**message_data)
+
+    @sync_to_async
+    def _save_bot_response(self, session, processing_result, user_message):
+        """Save bot response to database"""
+        # Handle search data saving synchronously within this transaction
+        if processing_result.get('local_results') or processing_result.get('external_results'):
+            self._save_search_data_sync(processing_result, user_message)
+        
+        bot_message_data = {
+            'chat_session': session,
+            'sender_type': 'bot',
+            'message_type': 'text',
+            'content': processing_result.get('final_response', ''),
+            'search_mode': processing_result.get('search_strategy', 'unknown'),
+            'response_time': processing_result.get('metadata', {}).get('processing_time', 0),
+            'confidence_score': processing_result.get('metadata', {}).get('confidence_score', 0),
+            'search_results_count': (
+                processing_result.get('local_results', {}).get('total_results', 0) +
+                processing_result.get('external_results', {}).get('total_found', 0)
+            ),
+            'context_data': {
+                'intent': processing_result.get('intent', {}),
+                'search_strategy': processing_result.get('search_strategy'),
+                'services_used': processing_result.get('metadata', {}).get('services_used', [])
+            }
+        }
+        
+        return ChatMessage.objects.create(**bot_message_data)
+
+    async def _build_conversation_context(self, session, request):
+        """Build conversation context"""
+        context = {
+            'session_id': str(session.id),
+            'user_preferences': session.user_preferences,
+            'location_context': session.location_context or self._extract_location_context(request),
+            'conversation_history': [],
+            'recent_searches': []
+        }
+        
+        # Get recent data concurrently
+        recent_messages, recent_searches = await asyncio.gather(
+            self._get_recent_messages(session, 10),
+            self._get_recent_searches(session, 5)
         )
         
-        # Store in database
+        context['conversation_history'] = [
+            {
+                'sender_type': msg.sender_type,
+                'content': msg.content,
+                'timestamp': msg.created_at.isoformat(),
+                'message_type': msg.message_type
+            }
+            for msg in recent_messages
+        ]
+        
+        context['recent_searches'] = [
+            {
+                'query': search.query_text,
+                'search_type': search.search_type,
+                'results_count': search.total_results_shown,
+                'timestamp': search.created_at.isoformat()
+            }
+            for search in recent_searches
+        ]
+        
+        return context
+
+    @sync_to_async
+    def _get_recent_messages(self, session, limit=10):
+        """Get recent messages"""
+        return list(session.messages.filter(
+            is_active=True
+        ).order_by('-created_at')[:limit])
+
+    @sync_to_async
+    def _get_recent_searches(self, session, limit=5):
+        """Get recent searches"""
+        return list(SearchQuery.objects.filter(
+            chat_message__chat_session=session
+        ).order_by('-created_at')[:limit])
+
+    def _save_search_data_sync(self, processing_result, user_message):
+        """Save search data synchronously"""
         try:
-            with transaction.atomic():
-                message_obj = ChatMessage.objects.create(
-                    user=user,
-                    user_input=f"Image search: {user_query}",
-                    bot_response=ai_response[:2000],
-                    is_image_message=True,
-                    image_file=image_file,
-                    image_analysis=analysis_result[:1000],
-                    timestamp=timezone.now()
-                )
+            search_strategy = processing_result.get('search_strategy', 'unknown')
+            intent = processing_result.get('intent', {})
+            
+            search_query_data = {
+                'chat_message': user_message,
+                'query_text': user_message.content,
+                'search_type': intent.get('search_type', 'general'),
+                'source_used': search_strategy,
+                'filters': intent.get('filters', {}),
+                'location_context': processing_result.get('location_context', {}),
+                'local_results_count': processing_result.get('local_results', {}).get('total_results', 0),
+                'external_results_count': processing_result.get('external_results', {}).get('total_found', 0),
+                'total_results_shown': (
+                    processing_result.get('local_results', {}).get('total_results', 0) +
+                    processing_result.get('external_results', {}).get('total_found', 0)
+                ),
+                'search_duration': processing_result.get('metadata', {}).get('processing_time', 0)
+            }
+            
+            search_query = SearchQuery.objects.create(**search_query_data)
+            self._save_search_results_sync(search_query, processing_result)
+            
+        except Exception as e:
+            logger.error(f"Error saving search data: {str(e)}")
+
+    def _save_search_results_sync(self, search_query, processing_result):
+        """Save search results synchronously"""
+        try:
+            results_to_create = []
+            
+            # Process local results
+            local_results = processing_result.get('local_results', {})
+            for result_type in ['products', 'services']:
+                results = local_results.get(result_type, [])
+                for i, result in enumerate(results[:10]):
+                    results_to_create.append(SearchResult(
+                        search_query=search_query,
+                        result_type=result_type[:-1],
+                        title=result.get('name', 'Unknown'),
+                        description=result.get('description', ''),
+                        url=result.get('url', ''),
+                        image_url=result.get('image', ''),
+                        object_id=result.get('id'),
+                        external_data=result,
+                        price_info={
+                            'price': result.get('price', 0),
+                            'currency': result.get('currency', 'NGN'),
+                            'formatted': result.get('formatted_price', '')
+                        },
+                        location_info=result.get('location', {}),
+                        relevance_score=result.get('relevance_score', 0.5),
+                        position=i + 1
+                    ))
+            
+            # Process external results
+            external_results = processing_result.get('external_results', {})
+            for i, result in enumerate(external_results.get('products', [])[:10]):
+                results_to_create.append(SearchResult(
+                    search_query=search_query,
+                    result_type='external_product',
+                    title=result.get('title', 'Unknown'),
+                    description=result.get('description', ''),
+                    url=result.get('url', ''),
+                    image_url=result.get('image_url', ''),
+                    external_data=result,
+                    price_info={
+                        'price_text': result.get('price', ''),
+                        'source': result.get('source', '')
+                    },
+                    relevance_score=result.get('confidence', 0.5),
+                    position=i + 1 + len(local_results.get('products', []))
+                ))
+            
+            if results_to_create:
+                SearchResult.objects.bulk_create(results_to_create, ignore_conflicts=True)
                 
-                conversation_manager.add_exchange("image search", ai_response)
-                
-        except Exception as db_error:
-            logger.error(f"Image message DB storage error: {str(db_error)}")
+        except Exception as e:
+            logger.error(f"Error saving search results: {str(e)}")
+
+    async def _update_analytics(self, processing_result, chat_session):
+        """Update analytics"""
+        try:
+            analytics_data = {
+                'session_id': str(chat_session.id),
+                'response_time': processing_result.get('metadata', {}).get('processing_time', 0),
+                'search_strategy': processing_result.get('search_strategy', 'unknown'),
+                'results_count': (
+                    processing_result.get('local_results', {}).get('total_results', 0) +
+                    processing_result.get('external_results', {}).get('total_found', 0)
+                ),
+                'success': processing_result.get('success', True)
+            }
+            
+            await self.analytics.record_interaction(analytics_data)
+            
+        except Exception as e:
+            logger.error(f"Error updating analytics: {str(e)}")
+
+    async def _generate_suggested_actions(self, processing_result):
+        """Generate suggested actions"""
+        suggestions = []
+        local_results = processing_result.get('local_results', {})
+        external_results = processing_result.get('external_results', {})
         
-        return Response({
-            'analysis': analysis_result,
-            'response': ai_response,
-            'finda_results': finda_results,
-            'search_suggestions': [],  # Could add image-based suggestions
-            'processing_time': round(time.time() - start_time, 2),
-            'message_id': getattr(message_obj, 'id', None)
-        }, status=status.HTTP_200_OK)
+        if local_results.get('products') or external_results.get('products'):
+            suggestions.extend([
+                {'action': 'compare_products', 'label': 'Compare these products', 'description': 'Get a detailed comparison'},
+                {'action': 'filter_results', 'label': 'Filter results', 'description': 'Narrow down by criteria'},
+                {'action': 'similar_products', 'label': 'Find similar products', 'description': 'Search alternatives'}
+            ])
+        
+        if local_results.get('services'):
+            suggestions.extend([
+                {'action': 'contact_provider', 'label': 'Contact service provider', 'description': 'Get in touch directly'},
+                {'action': 'check_availability', 'label': 'Check availability', 'description': 'Verify service availability'}
+            ])
+        
+        suggestions.extend([
+            {'action': 'new_search', 'label': 'Search for something else', 'description': 'Start a new search'},
+            {'action': 'get_recommendations', 'label': 'Get recommendations', 'description': 'Get personalized recommendations'}
+        ])
+        
+        return suggestions[:5]
+
+    async def _generate_tts_response(self, text):
+        """Generate TTS response"""
+        return {
+            'audio_url': None,
+            'duration': 0,
+            'format': 'mp3',
+            'message': 'TTS not implemented yet'
+        }
+
+    def _get_client_ip(self, request):
+        """Get client IP"""
+        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+        if x_forwarded_for:
+            return x_forwarded_for.split(',')[0].strip()
+        return request.META.get('REMOTE_ADDR', 'Unknown')
+
+    def _extract_device_info(self, request):
+        """Extract device info"""
+        user_agent = request.META.get('HTTP_USER_AGENT', '')
+        return {
+            'user_agent': user_agent[:500],
+            'is_mobile': any(x in user_agent for x in ['Mobile', 'Android', 'iPhone']),
+            'browser': 'Chrome' if 'Chrome' in user_agent else 'Unknown',
+            'os': 'Windows' if 'Windows' in user_agent else 'Unknown'
+        }
+
+    def _extract_location_context(self, request):
+        """Extract location context"""
+        return {
+            'ip_address': self._get_client_ip(request),
+            'country': 'Nigeria',
+            'timezone': 'Africa/Lagos',
+            'currency': 'NGN'
+        }
+      
+# @method_decorator(csrf_exempt, name='dispatch')
+# class ChatAPIView(APIView):
+#     """Main API endpoint for chat interactions"""
+#     permission_classes = [AllowAny]
+    
+#     def __init__(self):
+#         super().__init__()
+#         self.router = SmartChatbotRouter()
+#         self.session_manager = ChatSessionManager()
+#         self.analytics = ChatAnalyticsManager()
+    
+#     async def post(self, request):
+#         """Handle chat messages"""
+#         try:
+#             # Parse request data
+#             data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+            
+#             message_text = data.get('message', '').strip()
+#             message_type = data.get('message_type', 'text')
+#             session_id = data.get('session_id')
+#             file_data = request.FILES.get('file') if message_type in ['image', 'voice'] else None
+            
+#             # Validate input
+#             if not message_text and not file_data:
+#                 return JsonResponse({
+#                     'success': False,
+#                     'error': 'Message text or file is required'
+#                 }, status=400)
+            
+#             # Get or create chat session
+#             chat_session = await self._get_or_create_session(request, session_id)
+            
+#             # Save user message to database
+#             user_message = await self._save_user_message(
+#                 chat_session, message_text, message_type, file_data
+#             )
+            
+#             # Get conversation context
+#             context = await self._build_conversation_context(chat_session, request)
+            
+#             # Process message with the router
+#             processing_result = await self.router.process_message(
+#                 message_text, message_type, file_data, context
+#             )
+            
+#             # Save bot response to database
+#             bot_message = await self._save_bot_response(
+#                 chat_session, processing_result, user_message
+#             )
+            
+#             # Update analytics
+#             await self._update_analytics(processing_result, chat_session)
+            
+#             # Prepare response
+#             response_data = {
+#                 'success': processing_result.get('success', True),
+#                 'message_id': str(bot_message.id),
+#                 'session_id': str(chat_session.id),
+#                 'response': processing_result.get('final_response', ''),
+#                 'message_type': 'text',
+#                 'metadata': {
+#                     'processing_time': processing_result.get('metadata', {}).get('processing_time', 0),
+#                     'search_strategy': processing_result.get('search_strategy', 'unknown'),
+#                     'confidence_score': processing_result.get('metadata', {}).get('confidence_score', 0),
+#                     'services_used': processing_result.get('metadata', {}).get('services_used', [])
+#                 },
+#                 'search_results': {
+#                     'local': {
+#                         'products': processing_result.get('local_results', {}).get('products', [])[:5],
+#                         'services': processing_result.get('local_results', {}).get('services', [])[:5],
+#                         'total': processing_result.get('local_results', {}).get('total_results', 0)
+#                     },
+#                     'external': {
+#                         'products': processing_result.get('external_results', {}).get('products', [])[:5],
+#                         'total': processing_result.get('external_results', {}).get('total_found', 0)
+#                     }
+#                 },
+#                 'suggested_actions': await self._generate_suggested_actions(processing_result),
+#                 'timestamp': datetime.now().isoformat()
+#             }
+            
+#             # Add TTS audio if requested
+#             if data.get('enable_tts', False):
+#                 response_data['tts_audio'] = await self._generate_tts_response(
+#                     processing_result.get('final_response', '')
+#                 )
+            
+#             return JsonResponse(response_data)
+            
+#         except json.JSONDecodeError:
+#             return JsonResponse({
+#                 'success': False,
+#                 'error': 'Invalid JSON data'
+#             }, status=400)
+        
+#         except Exception as e:
+#             logger.error(f"Error processing chat message: {str(e)}")
+#             return JsonResponse({
+#                 'success': False,
+#                 'error': 'An error occurred while processing your message',
+#                 'message': 'I apologize, but I encountered an error. Please try again.',
+#                 'timestamp': datetime.now().isoformat()
+#             }, status=500)
+    
+#     async def _get_or_create_session(self, request, session_id: Optional[str]) -> ChatSession:
+#         """Get existing session or create new one"""
+#         if session_id:
+#             try:
+#                 session = await ChatSession.objects.select_related('user').aget(
+#                     id=session_id,
+#                     status='active'
+#                 )
+#                 # Update last activity
+#                 session.last_activity = datetime.now()
+#                 await session.asave()
+#                 return session
+#             except ChatSession.DoesNotExist:
+#                 pass
+        
+#         # Create new session
+#         session_data = {
+#             'session_id': self.session_manager.generate_session_id(),
+#             'ip_address': self._get_client_ip(request),
+#             'user_agent': request.META.get('HTTP_USER_AGENT', '')[:500],
+#             'device_info': self._extract_device_info(request)
+#         }
+        
+#         if request.user.is_authenticated:
+#             session_data['user'] = request.user
+        
+#         return await ChatSession.objects.acreate(**session_data)
+    
+#     async def _save_user_message(
+#         self, 
+#         session: ChatSession, 
+#         message: str, 
+#         message_type: str,
+#         file_data: Any = None
+#     ) -> ChatMessage:
+#         """Save user message to database"""
+#         message_data = {
+#             'chat_session': session,
+#             'sender_type': 'user',
+#             'message_type': message_type,
+#             'content': message,
+#             'context_data': {}
+#         }
+        
+#         # Handle file uploads
+#         if file_data and message_type == 'image':
+#             # Upload image to Cloudinary (this will be handled by multimodal service)
+#             message_data['image'] = file_data
+#         elif file_data and message_type == 'voice':
+#             message_data['voice_file'] = file_data
+        
+#         return await ChatMessage.objects.acreate(**message_data)
+    
+#     async def _save_bot_response(
+#         self,
+#         session: ChatSession,
+#         processing_result: Dict,
+#         user_message: ChatMessage
+#     ) -> ChatMessage:
+#         """Save bot response to database"""
+        
+#         # Create search queries and results if applicable
+#         if processing_result.get('local_results') or processing_result.get('external_results'):
+#             await self._save_search_data(processing_result, user_message)
+        
+#         # Save bot message
+#         bot_message_data = {
+#             'chat_session': session,
+#             'sender_type': 'bot',
+#             'message_type': 'text',
+#             'content': processing_result.get('final_response', ''),
+#             'search_mode': processing_result.get('search_strategy', 'unknown'),
+#             'response_time': processing_result.get('metadata', {}).get('processing_time', 0),
+#             'confidence_score': processing_result.get('metadata', {}).get('confidence_score', 0),
+#             'search_results_count': (
+#                 processing_result.get('local_results', {}).get('total_results', 0) +
+#                 processing_result.get('external_results', {}).get('total_found', 0)
+#             ),
+#             'context_data': {
+#                 'intent': processing_result.get('intent', {}),
+#                 'search_strategy': processing_result.get('search_strategy'),
+#                 'services_used': processing_result.get('metadata', {}).get('services_used', [])
+#             }
+#         }
+        
+#         return await ChatMessage.objects.acreate(**bot_message_data)
+    
+#     async def _build_conversation_context(self, session: ChatSession, request) -> Dict:
+#         """Build conversation context for the AI"""
+#         context = {
+#             'session_id': str(session.id),
+#             'user_preferences': session.user_preferences,
+#             'location_context': session.location_context or self._extract_location_context(request),
+#             'conversation_history': [],
+#             'recent_searches': []
+#         }
+        
+#         # Get recent conversation history
+#         recent_messages = await self._get_recent_messages(session, limit=10)
+#         context['conversation_history'] = [
+#             {
+#                 'sender_type': msg.sender_type,
+#                 'content': msg.content,
+#                 'timestamp': msg.created_at.isoformat(),
+#                 'message_type': msg.message_type
+#             }
+#             for msg in recent_messages
+#         ]
+        
+#         # Get recent search queries
+#         recent_searches = await self._get_recent_searches(session, limit=5)
+#         context['recent_searches'] = [
+#             {
+#                 'query': search.query_text,
+#                 'search_type': search.search_type,
+#                 'results_count': search.total_results_shown,
+#                 'timestamp': search.created_at.isoformat()
+#             }
+#             for search in recent_searches
+#         ]
+        
+#         return context
+    
+#     @database_sync_to_async
+#     def _get_recent_messages(self, session: ChatSession, limit: int = 10):
+#         """Get recent messages from session"""
+#         return list(session.messages.filter(
+#             is_active=True
+#         ).order_by('-created_at')[:limit])
+    
+#     @database_sync_to_async
+#     def _get_recent_searches(self, session: ChatSession, limit: int = 5):
+#         """Get recent search queries from session"""
+#         return list(SearchQuery.objects.filter(
+#             chat_message__chat_session=session
+#         ).order_by('-created_at')[:limit])
+    
+#     async def _save_search_data(self, processing_result: Dict, user_message: ChatMessage):
+#         """Save search data to database"""
+#         try:
+#             # Extract search information
+#             search_strategy = processing_result.get('search_strategy', 'unknown')
+#             intent = processing_result.get('intent', {})
+            
+#             # Create search query record
+#             search_query_data = {
+#                 'chat_message': user_message,
+#                 'query_text': user_message.content,
+#                 'search_type': intent.get('search_type', 'general'),
+#                 'source_used': search_strategy,
+#                 'filters': intent.get('filters', {}),
+#                 'location_context': processing_result.get('location_context', {}),
+#                 'local_results_count': processing_result.get('local_results', {}).get('total_results', 0),
+#                 'external_results_count': processing_result.get('external_results', {}).get('total_found', 0),
+#                 'total_results_shown': (
+#                     processing_result.get('local_results', {}).get('total_results', 0) +
+#                     processing_result.get('external_results', {}).get('total_found', 0)
+#                 ),
+#                 'search_duration': processing_result.get('metadata', {}).get('processing_time', 0)
+#             }
+            
+#             search_query = await self._create_search_query(search_query_data)
+            
+#             # Save search results
+#             await self._save_search_results(search_query, processing_result)
+            
+#         except Exception as e:
+#             logger.error(f"Error saving search data: {str(e)}")
+    
+#     @database_sync_to_async
+#     def _create_search_query(self, search_data: Dict) -> SearchQuery:
+#         """Create search query record"""
+#         return SearchQuery.objects.create(**search_data)
+    
+#     async def _save_search_results(self, search_query: SearchQuery, processing_result: Dict):
+#         """Save individual search results"""
+#         try:
+#             results_to_create = []
+            
+#             # Process local results
+#             local_results = processing_result.get('local_results', {})
+#             for result_type in ['products', 'services']:
+#                 results = local_results.get(result_type, [])
+#                 for i, result in enumerate(results[:10]):  # Limit to top 10
+#                     results_to_create.append({
+#                         'search_query': search_query,
+#                         'result_type': result_type[:-1],  # 'product' or 'service'
+#                         'title': result.get('name', 'Unknown'),
+#                         'description': result.get('description', ''),
+#                         'url': result.get('url', ''),
+#                         'image_url': result.get('image', ''),
+#                         'object_id': result.get('id'),
+#                         'external_data': result,
+#                         'price_info': {
+#                             'price': result.get('price', 0),
+#                             'currency': result.get('currency', 'NGN'),
+#                             'formatted': result.get('formatted_price', '')
+#                         },
+#                         'location_info': result.get('location', {}),
+#                         'relevance_score': result.get('relevance_score', 0.5),
+#                         'position': i + 1
+#                     })
+            
+#             # Process external results
+#             external_results = processing_result.get('external_results', {})
+#             external_products = external_results.get('products', [])
+#             for i, result in enumerate(external_products[:10]):
+#                 results_to_create.append({
+#                     'search_query': search_query,
+#                     'result_type': 'external_product',
+#                     'title': result.get('title', 'Unknown'),
+#                     'description': result.get('description', ''),
+#                     'url': result.get('url', ''),
+#                     'image_url': result.get('image_url', ''),
+#                     'external_data': result,
+#                     'price_info': {
+#                         'price_text': result.get('price', ''),
+#                         'source': result.get('source', '')
+#                     },
+#                     'relevance_score': result.get('confidence', 0.5),
+#                     'position': i + 1 + len(local_results.get('products', []))
+#                 })
+            
+#             # Bulk create results
+#             if results_to_create:
+#                 await self._bulk_create_search_results(results_to_create)
+            
+#         except Exception as e:
+#             logger.error(f"Error saving search results: {str(e)}")
+    
+#     @database_sync_to_async
+#     def _bulk_create_search_results(self, results_data: List[Dict]):
+#         """Bulk create search results"""
+#         results = [SearchResult(**data) for data in results_data]
+#         SearchResult.objects.bulk_create(results, ignore_conflicts=True)
+    
+#     async def _update_analytics(self, processing_result: Dict, chat_session: ChatSession):
+#         """Update analytics with the interaction"""
+#         try:
+#             from .utils import ChatAnalyticsManager
+#             analytics = ChatAnalyticsManager()
+            
+#             analytics_data = {
+#                 'session_id': str(chat_session.id),
+#                 'response_time': processing_result.get('metadata', {}).get('processing_time', 0),
+#                 'search_strategy': processing_result.get('search_strategy', 'unknown'),
+#                 'results_count': (
+#                     processing_result.get('local_results', {}).get('total_results', 0) +
+#                     processing_result.get('external_results', {}).get('total_found', 0)
+#                 ),
+#                 'success': processing_result.get('success', True)
+#             }
+            
+#             await analytics.record_interaction(analytics_data)
+            
+#         except Exception as e:
+#             logger.error(f"Error updating analytics: {str(e)}")
+    
+#     async def _generate_suggested_actions(self, processing_result: Dict) -> List[Dict]:
+#         """Generate suggested actions based on processing result"""
+#         suggestions = []
+        
+#         # Get search results
+#         local_results = processing_result.get('local_results', {})
+#         external_results = processing_result.get('external_results', {})
+        
+#         # If products found, suggest related actions
+#         if local_results.get('products') or external_results.get('products'):
+#             suggestions.extend([
+#                 {
+#                     'action': 'compare_products',
+#                     'label': 'Compare these products',
+#                     'description': 'Get a detailed comparison of the products found'
+#                 },
+#                 {
+#                     'action': 'filter_results',
+#                     'label': 'Filter results',
+#                     'description': 'Narrow down results by price, location, or other criteria'
+#                 },
+#                 {
+#                     'action': 'similar_products',
+#                     'label': 'Find similar products',
+#                     'description': 'Search for alternative or related products'
+#                 }
+#             ])
+        
+#         # If services found
+#         if local_results.get('services'):
+#             suggestions.extend([
+#                 {
+#                     'action': 'contact_provider',
+#                     'label': 'Contact service provider',
+#                     'description': 'Get in touch with the service provider directly'
+#                 },
+#                 {
+#                     'action': 'check_availability',
+#                     'label': 'Check availability',
+#                     'description': 'Verify service availability in your area'
+#                 }
+#             ])
+        
+#         # General suggestions
+#         suggestions.extend([
+#             {
+#                 'action': 'new_search',
+#                 'label': 'Search for something else',
+#                 'description': 'Start a new search query'
+#             },
+#             {
+#                 'action': 'get_recommendations',
+#                 'label': 'Get recommendations',
+#                 'description': 'Get personalized product recommendations'
+#             }
+#         ])
+        
+#         return suggestions[:5]  # Limit to 5 suggestions
+    
+#     async def _generate_tts_response(self, text: str) -> Dict[str, Any]:
+#         """Generate text-to-speech audio (placeholder)"""
+#         # This is a placeholder - implement with your preferred TTS service
+#         return {
+#             'audio_url': None,
+#             'duration': 0,
+#             'format': 'mp3',
+#             'message': 'TTS not implemented yet'
+#         }
+    
+#     def _get_client_ip(self, request):
+#         """Get client IP address from request"""
+#         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+#         if x_forwarded_for:
+#             return x_forwarded_for.split(',')[0].strip()
+#         return request.META.get('REMOTE_ADDR', 'Unknown')
+    
+#     def _extract_device_info(self, request) -> Dict[str, Any]:
+#         """Extract device information from request"""
+#         user_agent = request.META.get('HTTP_USER_AGENT', '')
+        
+#         device_info = {
+#             'user_agent': user_agent[:500],
+#             'is_mobile': 'Mobile' in user_agent or 'Android' in user_agent or 'iPhone' in user_agent,
+#             'browser': 'Unknown',
+#             'os': 'Unknown'
+#         }
+        
+#         # Simple browser detection
+#         if 'Chrome' in user_agent:
+#             device_info['browser'] = 'Chrome'
+#         elif 'Firefox' in user_agent:
+#             device_info['browser'] = 'Firefox'
+#         elif 'Safari' in user_agent:
+#             device_info['browser'] = 'Safari'
+#         elif 'Edge' in user_agent:
+#             device_info['browser'] = 'Edge'
+        
+#         # Simple OS detection
+#         if 'Windows' in user_agent:
+#             device_info['os'] = 'Windows'
+#         elif 'Mac' in user_agent:
+#             device_info['os'] = 'macOS'
+#         elif 'Linux' in user_agent:
+#             device_info['os'] = 'Linux'
+#         elif 'Android' in user_agent:
+#             device_info['os'] = 'Android'
+#         elif 'iOS' in user_agent:
+#             device_info['os'] = 'iOS'
+        
+#         return device_info
+    
+#     def _extract_location_context(self, request) -> Dict[str, Any]:
+#         """Extract location context from request"""
+#         # This is a basic implementation - you might want to use a geolocation service
+#         return {
+#             'ip_address': self._get_client_ip(request),
+#             'country': 'Nigeria',  # Default - implement proper geolocation
+#             'timezone': 'Africa/Lagos',
+#             'currency': 'NGN'
+#         }
+
+
+# Additional API view functions that were incomplete:
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+async def quick_search_view(request):
+    """Quick search API endpoint"""
+    try:
+        data = request.data
+        query = data.get('query', '').strip()
+        
+        if not query:
+            return Response({
+                'success': False,
+                'error': 'Search query is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Validate request
+        serializer = QuickSearchRequestSerializer(data=data)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'error': 'Invalid request data',
+                'details': serializer.errors
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Perform quick search
+        from .services.local_search import LocalSearchService
+        local_search = LocalSearchService()
+        
+        search_result = await local_search.quick_search(
+            query=query,
+            category=data.get('category'),
+            location=data.get('location'),
+            price_range=data.get('price_range'),
+            search_type=data.get('search_type', 'both')
+        )
+        
+        response_serializer = QuickSearchResponseSerializer({
+            'success': search_result['success'],
+            'query': query,
+            'results': search_result.get('results', {}),
+            'search_time': search_result.get('search_time', 0),
+            'error': search_result.get('error')
+        })
+        
+        return Response(response_serializer.data)
         
     except Exception as e:
-        logger.error(f"Image search API error: {str(e)}")
+        logger.error(f"Error in quick search: {str(e)}")
         return Response({
-            'error': 'Image search failed',
-            'message': 'Technical issue with image search. Please try text search instead.',
-            'processing_time': round(time.time() - start_time, 2),
-            'analysis': None,
-            'finda_results': []
+            'success': False,
+            'error': 'Search failed',
+            'query': data.get('query', ''),
+            'search_time': 0
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['GET', 'PUT'])
-@permission_classes([IsAuthenticated])
-def voice_settings_api(request):
-    """
-    Enhanced Voice Settings API
-    """
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def conversation_history_api_view(request, session_id):
+    """Get conversation history for a session"""
     try:
-        user = request.user
+        # Get session
+        session = get_object_or_404(ChatSession, id=session_id)
         
-        if request.method == 'GET':
-            try:
-                settings = UserVoiceSettings.objects.get(user=user)
-                serializer = VoiceSettingsSerializer(settings)
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            except UserVoiceSettings.DoesNotExist:
-                # Create default settings
-                settings = UserVoiceSettings.objects.create(user=user)
-                serializer = VoiceSettingsSerializer(settings)
-                return Response(serializer.data, status=status.HTTP_200_OK)
+        # Check permissions (user can only access their own sessions)
+        if session.user and session.user != request.user:
+            return Response({
+                'success': False,
+                'error': 'Access denied'
+            }, status=status.HTTP_403_FORBIDDEN)
         
-        elif request.method == 'PUT':
-            try:
-                settings, created = UserVoiceSettings.objects.get_or_create(user=user)
-                serializer = VoiceSettingsSerializer(settings, data=request.data, partial=True)
-                
-                if serializer.is_valid():
-                    serializer.save()
-                    return Response(serializer.data, status=status.HTTP_200_OK)
-                else:
-                    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-                    
-            except Exception as save_error:
-                logger.error(f"Voice settings save error: {str(save_error)}")
-                return Response({
-                    'error': 'Settings update failed',
-                    'message': 'Could not update voice settings.'
-                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-        
-    except Exception as e:
-        logger.error(f"Voice settings API error: {str(e)}")
-        return Response({
-            'error': 'Voice settings error',
-            'message': 'Technical issue with voice settings.'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-def get_chat_history(request, user):
-    """
-    Enhanced chat history with pagination and filtering
-    """
-    try:
+        # Get messages with pagination
         page = int(request.GET.get('page', 1))
-        page_size = min(int(request.GET.get('page_size', 20)), 50)  # Max 50 per page
-        
-        # Calculate offset
+        page_size = min(int(request.GET.get('page_size', 50)), 100)
         offset = (page - 1) * page_size
         
-        # Get messages with filters
-        messages = ChatMessage.objects.filter(user=user).order_by('-timestamp')
+        # Get messages
+        messages = session.messages.filter(
+            is_active=True
+        ).order_by('created_at')[offset:offset + page_size]
         
-        # Apply date filter if provided
-        date_from = request.GET.get('date_from')
-        date_to = request.GET.get('date_to')
+        total_count = session.messages.filter(is_active=True).count()
         
-        if date_from:
-            try:
-                from django.utils.dateparse import parse_date
-                date_from_parsed = parse_date(date_from)
-                if date_from_parsed:
-                    messages = messages.filter(timestamp__gte=date_from_parsed)
-            except:
-                pass
-        
-        if date_to:
-            try:
-                from django.utils.dateparse import parse_date
-                date_to_parsed = parse_date(date_to)
-                if date_to_parsed:
-                    messages = messages.filter(timestamp__lte=date_to_parsed)
-            except:
-                pass
-        
-        # Get total count
-        total_count = messages.count()
-        
-        # Get paginated results
-        paginated_messages = messages[offset:offset + page_size]
-        
-        # Serialize messages
-        serializer = ChatMessageSerializer(paginated_messages, many=True)
+        # Serialize
+        serializer = ChatMessageSerializer(messages, many=True)
         
         return Response({
+            'success': True,
+            'session': ChatSessionSerializer(session).data,
             'messages': serializer.data,
             'pagination': {
                 'page': page,
@@ -823,357 +1068,553 @@ def get_chat_history(request, user):
                 'has_next': offset + page_size < total_count,
                 'has_previous': page > 1
             }
-        }, status=status.HTTP_200_OK)
+        })
         
     except Exception as e:
-        logger.error(f"Chat history error: {str(e)}")
+        logger.error(f"Error getting conversation history: {str(e)}")
         return Response({
-            'error': 'History retrieval failed',
-            'messages': [],
-            'pagination': {}
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def clear_chat_history(request):
-    """
-    Clear chat history and conversation context
-    """
-    try:
-        user = request.user
-        user_id = str(user.id)
-        
-        # Clear database messages
-        deleted_count, _ = ChatMessage.objects.filter(user=user).delete()
-        
-        # Clear conversation context
-        conversation_manager = ConversationFlowManager(user_id)
-        conversation_manager.clear_context()
-        
-        # Clear cache
-        cache_keys = [
-            f"conversation_context_{user_id}",
-            f"conversation_events_{user_id}",
-            f"search_results_{user_id}"
-        ]
-        
-        for key in cache_keys:
-            cache.delete(key)
-        
-        logger.info(f"Cleared {deleted_count} messages for user {user_id}")
-        
-        return Response({
-            'message': f'Successfully cleared {deleted_count} messages and conversation context.',
-            'deleted_count': deleted_count
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.error(f"Clear history error: {str(e)}")
-        return Response({
-            'error': 'Failed to clear history',
-            'message': 'Technical issue clearing chat history.'
+            'success': False,
+            'error': 'Failed to retrieve conversation history'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def submit_feedback(request):
-    """
-    Submit user feedback on bot responses
-    """
+@permission_classes([AllowAny])
+def feedback_api_view(request):
+    """Submit feedback for a chat message"""
     try:
-        user = request.user
-        message_id = request.data.get('message_id')
-        rating = request.data.get('rating')  # 1-5 stars
-        feedback_text = request.data.get('feedback', '').strip()
-        
-        if not message_id:
+        # Validate request
+        serializer = FeedbackRequestSerializer(data=request.data)
+        if not serializer.is_valid():
             return Response({
-                'error': 'Message ID required'
+                'success': False,
+                'error': 'Invalid feedback data',
+                'details': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Validate rating
-        try:
-            rating = int(rating)
-            if rating < 1 or rating > 5:
-                raise ValueError()
-        except (ValueError, TypeError):
-            return Response({
-                'error': 'Rating must be between 1 and 5'
-            }, status=status.HTTP_400_BAD_REQUEST)
+        validated_data = serializer.validated_data
         
-        # Check if message exists and belongs to user
-        try:
-            message = ChatMessage.objects.get(id=message_id, user=user)
-        except ChatMessage.DoesNotExist:
-            return Response({
-                'error': 'Message not found'
-            }, status=status.HTTP_404_NOT_FOUND)
+        # Get the message
+        message = get_object_or_404(ChatMessage, id=validated_data['message_id'])
         
-        # Store feedback (you might want to create a Feedback model)
+        # Create or update feedback
         feedback_data = {
-            'user_id': str(user.id),
-            'message_id': message_id,
-            'rating': rating,
-            'feedback': feedback_text[:500],  # Limit feedback length
-            'timestamp': timezone.now().isoformat()
+            'chat_message': message,
+            'feedback_type': validated_data['feedback_type'],
+            'rating': validated_data.get('rating'),
+            'comment': validated_data.get('comment', ''),
+            'accuracy_rating': validated_data.get('accuracy_rating'),
+            'helpfulness_rating': validated_data.get('helpfulness_rating'),
+            'speed_rating': validated_data.get('speed_rating'),
+            'ip_address': request.META.get('REMOTE_ADDR')
         }
         
-        # Store in cache for now (implement proper model later)
-        feedback_key = f"feedback_{message_id}"
-        cache.set(feedback_key, feedback_data, timeout=86400 * 30)  # 30 days
+        if request.user.is_authenticated:
+            feedback_data['user'] = request.user
         
-        # Log analytics
-        ConversationAnalytics.log_conversation_event(
-            str(user.id), 'feedback_submitted', {
-                'rating': rating,
-                'has_text_feedback': bool(feedback_text),
-                'message_id': message_id
-            }
+        # Create or update feedback
+        feedback, created = UserFeedback.objects.update_or_create(
+            chat_message=message,
+            user=request.user if request.user.is_authenticated else None,
+            defaults=feedback_data
         )
         
-        logger.info(f"Feedback submitted: User {user.id}, Message {message_id}, Rating {rating}")
-        
         return Response({
-            'message': 'Thank you for your feedback!',
-            'feedback_id': feedback_key
-        }, status=status.HTTP_200_OK)
+            'success': True,
+            'message': 'Feedback submitted successfully',
+            'feedback_id': str(feedback.id),
+            'created': created
+        })
         
     except Exception as e:
-        logger.error(f"Feedback submission error: {str(e)}")
+        logger.error(f"Error submitting feedback: {str(e)}")
         return Response({
-            'error': 'Feedback submission failed',
-            'message': 'Technical issue submitting feedback.'
+            'success': False,
+            'error': 'Failed to submit feedback'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 @api_view(['GET'])
-def health_check(request):
-    """
-    System health check endpoint
-    """
+@permission_classes([AllowAny])
+def chatbot_status_view(request):
+    """Get chatbot system status"""
     try:
-        health_status = {
-            'status': 'healthy',
-            'timestamp': timezone.now().isoformat(),
-            'services': {}
+        # Get basic system info
+        status_info = {
+            'status': 'operational',
+            'timestamp': datetime.now().isoformat(),
+            'version': '1.0.0'
         }
         
-        # Check database
-        try:
-            from django.db import connection
-            with connection.cursor() as cursor:
-                cursor.execute("SELECT 1")
-            health_status['services']['database'] = 'healthy'
-        except Exception as db_error:
-            health_status['services']['database'] = f'unhealthy: {str(db_error)}'
-            health_status['status'] = 'degraded'
+        # Get today's basic stats
+        today = datetime.now().date()
+        today_sessions = ChatSession.objects.filter(created_at__date=today).count()
+        today_messages = ChatMessage.objects.filter(created_at__date=today).count()
         
-        # Check cache
-        try:
-            cache.set('health_check', 'test', timeout=60)
-            cache.get('health_check')
-            health_status['services']['cache'] = 'healthy'
-        except Exception as cache_error:
-            health_status['services']['cache'] = f'unhealthy: {str(cache_error)}'
-            health_status['status'] = 'degraded'
+        status_info.update({
+            'daily_stats': {
+                'sessions_today': today_sessions,
+                'messages_today': today_messages,
+                'active_sessions': ChatSession.objects.filter(status='active').count()
+            }
+        })
         
-        # Check AI service
-        try:
-            from .gemini_client import test_gemini_connection
-            ai_healthy, ai_message = test_gemini_connection()
-            if ai_healthy:
-                health_status['services']['ai'] = 'healthy'
-            else:
-                health_status['services']['ai'] = f'unhealthy: {ai_message}'
-                health_status['status'] = 'degraded'
-        except Exception as ai_error:
-            health_status['services']['ai'] = f'unhealthy: {str(ai_error)}'
-            health_status['status'] = 'degraded'
+        # Get configuration info (non-sensitive)
+        public_config = BotConfiguration.objects.filter(
+            key__in=['max_file_size_mb', 'supported_languages', 'features_enabled'],
+            is_active=True
+        ).values('key', 'value')
         
-        # Check file storage
-        try:
-            from django.core.files.storage import default_storage
-            test_file_name = 'health_check_test.txt'
-            default_storage.save(test_file_name, BytesIO(b'test'))
-            default_storage.delete(test_file_name)
-            health_status['services']['storage'] = 'healthy'
-        except Exception as storage_error:
-            health_status['services']['storage'] = f'unhealthy: {str(storage_error)}'
-            health_status['status'] = 'degraded'
+        status_info['configuration'] = {
+            config['key']: config['value'] for config in public_config
+        }
         
-        status_code = status.HTTP_200_OK if health_status['status'] in ['healthy', 'degraded'] else status.HTTP_503_SERVICE_UNAVAILABLE
-        
-        return Response(health_status, status=status_code)
+        return Response(status_info)
         
     except Exception as e:
-        logger.error(f"Health check error: {str(e)}")
+        logger.error(f"Error getting status: {str(e)}")
+        return Response({
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@login_required
+def admin_analytics_view(request):
+    """Admin analytics dashboard view"""
+    if not request.user.is_staff:
+        return render(request, 'ai_chatbot/access_denied.html')
+    
+    try:
+        # Get analytics data for the last 30 days
+        analytics = ChatAnalytics.objects.all()[:30]
+        
+        # Get summary statistics
+        total_sessions = sum(a.total_sessions for a in analytics)
+        total_messages = sum(a.total_messages for a in analytics)
+        avg_rating = sum(a.average_rating for a in analytics) / len(analytics) if analytics else 0
+        
+        context = {
+            'analytics': analytics,
+            'summary': {
+                'total_sessions': total_sessions,
+                'total_messages': total_messages,
+                'average_rating': round(avg_rating, 1),
+                'days_analyzed': len(analytics)
+            },
+            'chart_data': {
+                'dates': [a.date.strftime('%Y-%m-%d') for a in reversed(analytics)],
+                'sessions': [a.total_sessions for a in reversed(analytics)],
+                'messages': [a.total_messages for a in reversed(analytics)],
+                'ratings': [a.average_rating for a in reversed(analytics)]
+            }
+        }
+        
+        return render(request, 'ai_chatbot/admin_analytics.html', context)
+        
+    except Exception as e:
+        logger.error(f"Error in admin analytics view: {str(e)}")
+        return render(request, 'ai_chatbot/error.html', {'error': str(e)})
+                
+
+
+
+
+
+
+
+
+
+
+
+
+# Add these additional views to views.py
+
+# Additional API Views that need to be added to views.py:
+
+class ImageUploadView(APIView):
+    """Handle image upload for analysis"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        """Handle image upload"""
+        try:
+            if 'image' not in request.FILES:
+                return Response({
+                    'success': False,
+                    'error': 'No image file provided'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            image_file = request.FILES['image']
+            message = request.data.get('message', '')
+            
+            # Validate image
+            from .serializers import validate_image_file
+            try:
+                validate_image_file(image_file)
+            except serializers.ValidationError as e:
+                return Response({
+                    'success': False,
+                    'error': str(e)
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Process image with multimodal service
+            from .services.multimodal import MultimodalProcessor
+            multimodal = MultimodalProcessor()
+            
+            result = asyncio.run(multimodal.process_image(
+                image_file, message, 'product_search'
+            ))
+            
+            return Response({
+                'success': result['success'],
+                'image_analysis': result,
+                'message': 'Image processed successfully' if result['success'] else 'Failed to process image'
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in image upload: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Failed to process image'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class VoiceUploadView(APIView):
+    """Handle voice note upload for transcription"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        """Handle voice upload"""
+        try:
+            if 'voice' not in request.FILES:
+                return Response({
+                    'success': False,
+                    'error': 'No voice file provided'
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            voice_file = request.FILES['voice']
+            language = request.data.get('language', 'en')
+            
+            # Validate audio
+            from .serializers import validate_audio_file
+            try:
+                validate_audio_file(voice_file)
+            except serializers.ValidationError as e:
+                return Response({
+                    'success': False,
+                    'error': str(e)
+                }, status=status.HTTP_400_BAD_REQUEST)
+            
+            # Process voice with multimodal service
+            from .services.multimodal import MultimodalProcessor
+            multimodal = MultimodalProcessor()
+            
+            result = asyncio.run(multimodal.process_voice_note(voice_file, language))
+            
+            return Response({
+                'success': result['success'],
+                'transcription': result.get('transcription', {}),
+                'audio_info': result.get('audio_info', {}),
+                'message': 'Voice processed successfully' if result['success'] else 'Failed to process voice'
+            })
+            
+        except Exception as e:
+            logger.error(f"Error in voice upload: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Failed to process voice'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class SearchSuggestionsView(APIView):
+    """Provide search suggestions and autocomplete"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        """Get search suggestions"""
+        try:
+            query = request.GET.get('q', '').strip()
+            limit = min(int(request.GET.get('limit', 10)), 20)
+            
+            suggestions = []
+            
+            if len(query) >= 2:
+                # Get suggestions from local search service
+                from .services.local_search import LocalSearchService
+                local_search = LocalSearchService()
+                
+                # Get popular searches
+                popular_searches = local_search.get_popular_searches(limit)
+                
+                # Filter suggestions that match the query
+                for search in popular_searches:
+                    if query.lower() in search['term'].lower():
+                        suggestions.append({
+                            'text': search['term'],
+                            'type': 'popular',
+                            'count': search['count']
+                        })
+                
+                # Get category suggestions
+                from main.models import Category  # Adjust import path
+                categories = Category.objects.filter(
+                    name__icontains=query,
+                    is_active=True
+                )[:5]
+                
+                for category in categories:
+                    suggestions.append({
+                        'text': category.name,
+                        'type': 'category',
+                        'description': f"Browse {category.name} category"
+                    })
+            
+            return Response({
+                'success': True,
+                'query': query,
+                'suggestions': suggestions[:limit]
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting suggestions: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Failed to get suggestions'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class AnalyticsAPIView(APIView):
+    """API for chatbot analytics (admin only)"""
+    
+    def get(self, request):
+        """Get analytics data"""
+        if not request.user.is_staff:
+            return Response({
+                'success': False,
+                'error': 'Access denied'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        try:
+            # Get date range
+            days = int(request.GET.get('days', 30))
+            end_date = datetime.now().date()
+            start_date = end_date - timedelta(days=days)
+            
+            # Get analytics
+            analytics = ChatAnalytics.objects.filter(
+                date__range=[start_date, end_date]
+            ).order_by('-date')
+            
+            serializer = ChatAnalyticsSerializer(analytics, many=True)
+            
+            # Calculate summary statistics
+            total_sessions = sum(a.total_sessions for a in analytics)
+            total_messages = sum(a.total_messages for a in analytics)
+            avg_response_time = sum(a.average_response_time for a in analytics) / len(analytics) if analytics else 0
+            
+            return Response({
+                'success': True,
+                'analytics': serializer.data,
+                'summary': {
+                    'date_range': f"{start_date} to {end_date}",
+                    'total_sessions': total_sessions,
+                    'total_messages': total_messages,
+                    'avg_response_time': round(avg_response_time, 2),
+                    'days_analyzed': len(analytics)
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting analytics: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Failed to retrieve analytics'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class ChatWidgetView(TemplateView):
+    """Embeddable chat widget"""
+    template_name = 'ai_chatbot/chat_widget.html'
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        
+        # Widget configuration
+        widget_config = {
+            'theme': self.request.GET.get('theme', 'light'),
+            'position': self.request.GET.get('position', 'bottom-right'),
+            'auto_open': self.request.GET.get('auto_open', 'false').lower() == 'true',
+            'show_branding': self.request.GET.get('branding', 'true').lower() == 'true',
+            'primary_color': self.request.GET.get('color', '#007bff'),
+            'greeting_message': self.request.GET.get('greeting', 'Hi! How can I help you find products or services today?')
+        }
+        
+        context['widget_config'] = widget_config
+        return context
+
+
+class AdminConfigurationView(APIView):
+    """Admin view for bot configuration"""
+    
+    def get(self, request):
+        """Get current bot configuration"""
+        if not request.user.is_staff:
+            return Response({'error': 'Access denied'}, status=403)
+        
+        try:
+            configurations = BotConfiguration.objects.filter(is_active=True)
+            serializer = BotConfigurationSerializer(configurations, many=True)
+            
+            return Response({
+                'success': True,
+                'configurations': serializer.data
+            })
+            
+        except Exception as e:
+            return Response({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+    
+    def post(self, request):
+        """Update bot configuration"""
+        if not request.user.is_staff:
+            return Response({'error': 'Access denied'}, status=403)
+        
+        try:
+            key = request.data.get('key')
+            value = request.data.get('value')
+            description = request.data.get('description', '')
+            
+            if not key or value is None:
+                return Response({
+                    'success': False,
+                    'error': 'Key and value are required'
+                }, status=400)
+            
+            # Update or create configuration
+            config = BotConfiguration.set_config(key, value, description)
+            
+            return Response({
+                'success': True,
+                'message': 'Configuration updated successfully',
+                'configuration': BotConfigurationSerializer(config).data
+            })
+            
+        except Exception as e:
+            logger.error(f"Error updating configuration: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Failed to update configuration'
+            }, status=500)
+
+
+class AdminSessionsView(APIView):
+    """Admin view for chat sessions"""
+    
+    def get(self, request):
+        """Get chat sessions with pagination"""
+        if not request.user.is_staff:
+            return Response({'error': 'Access denied'}, status=403)
+        
+        try:
+            # Pagination parameters
+            page = int(request.GET.get('page', 1))
+            page_size = min(int(request.GET.get('page_size', 20)), 100)
+            offset = (page - 1) * page_size
+            
+            # Filters
+            status_filter = request.GET.get('status')
+            date_from = request.GET.get('date_from')
+            date_to = request.GET.get('date_to')
+            
+            # Build queryset
+            queryset = ChatSession.objects.all()
+            
+            if status_filter:
+                queryset = queryset.filter(status=status_filter)
+            
+            if date_from:
+                queryset = queryset.filter(created_at__gte=date_from)
+            
+            if date_to:
+                queryset = queryset.filter(created_at__lte=date_to)
+            
+            # Get total count
+            total_count = queryset.count()
+            
+            # Apply pagination
+            sessions = queryset.order_by('-last_activity')[offset:offset + page_size]
+            
+            serializer = ChatSessionSerializer(sessions, many=True)
+            
+            return Response({
+                'success': True,
+                'sessions': serializer.data,
+                'pagination': {
+                    'page': page,
+                    'page_size': page_size,
+                    'total_count': total_count,
+                    'total_pages': (total_count + page_size - 1) // page_size,
+                    'has_next': offset + page_size < total_count,
+                    'has_previous': page > 1
+                }
+            })
+            
+        except Exception as e:
+            logger.error(f"Error getting sessions: {str(e)}")
+            return Response({
+                'success': False,
+                'error': 'Failed to retrieve sessions'
+            }, status=500)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check_view(request):
+    """Health check endpoint"""
+    try:
+        # Check database connection
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        
+        # Check cache
+        cache.set('health_check', 'ok', 60)
+        cache_status = cache.get('health_check') == 'ok'
+        
+        # Check Gemini API (optional)
+        gemini_status = 'unknown'
+        try:
+            from .services.gemini_client import GeminiAIClient
+            if hasattr(settings, 'GOOGLE_API_KEY') and settings.GOOGLE_API_KEY:
+                gemini_status = 'configured'
+            else:
+                gemini_status = 'not_configured'
+        except Exception:
+            gemini_status = 'error'
+        
+        health_data = {
+            'status': 'healthy',
+            'timestamp': datetime.now().isoformat(),
+            'services': {
+                'database': 'ok',
+                'cache': 'ok' if cache_status else 'error',
+                'gemini_api': gemini_status,
+                'local_search': 'ok',
+                'web_search': 'ok'
+            },
+            'version': '1.0.0'
+        }
+        
+        return Response(health_data)
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
         return Response({
             'status': 'unhealthy',
             'error': str(e),
-            'timestamp': timezone.now().isoformat()
-        }, status=status.HTTP_503_SERVICE_UNAVAILABLE)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_search_suggestions(request):
-    """
-    Get search suggestions based on partial query
-    """
-    try:
-        query = request.GET.get('q', '').strip()
-        limit = min(int(request.GET.get('limit', 10)), 20)
-        
-        if len(query) < 2:
-            return Response({
-                'suggestions': [],
-                'message': 'Query too short for suggestions'
-            }, status=status.HTTP_200_OK)
-        
-        from .utils import get_search_suggestions
-        suggestions = get_search_suggestions(query)[:limit]
-        
-        return Response({
-            'suggestions': suggestions,
-            'query': query,
-            'count': len(suggestions)
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.error(f"Search suggestions error: {str(e)}")
-        return Response({
-            'suggestions': [],
-            'error': 'Failed to get suggestions'
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated]) 
-def conversation_analytics(request):
-    """
-    Get conversation analytics for the user
-    """
-    try:
-        user = request.user
-        user_id = str(user.id)
-        
-        # Get conversation insights
-        insights = ConversationAnalytics.get_conversation_insights(user_id)
-        
-        # Get conversation summary from context
-        conversation_manager = ConversationFlowManager(user_id)
-        summary = conversation_manager.context.get_conversation_summary() if conversation_manager.context else {}
-        
-        # Get message statistics
-        try:
-            total_messages = ChatMessage.objects.filter(user=user).count()
-            voice_messages = ChatMessage.objects.filter(user=user, is_voice_message=True).count()
-            image_messages = ChatMessage.objects.filter(user=user, is_image_message=True).count()
-            
-            # Recent activity (last 7 days)
-            from datetime import timedelta
-            week_ago = timezone.now() - timedelta(days=7)
-            recent_messages = ChatMessage.objects.filter(
-                user=user, 
-                timestamp__gte=week_ago
-            ).count()
-            
-        except Exception as stats_error:
-            logger.error(f"Message stats error: {str(stats_error)}")
-            total_messages = voice_messages = image_messages = recent_messages = 0
-        
-        analytics_data = {
-            'user_stats': {
-                'total_messages': total_messages,
-                'voice_messages': voice_messages,
-                'image_messages': image_messages,
-                'recent_activity': recent_messages
-            },
-            'conversation_insights': insights,
-            'session_summary': summary,
-            'preferences': {
-                'preferred_interaction': 'text',  # Could be enhanced
-                'active_sessions': 1
-            }
-        }
-        
-        return Response(analytics_data, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.error(f"Analytics error: {str(e)}")
-        return Response({
-            'error': 'Analytics unavailable',
-            'user_stats': {},
-            'conversation_insights': {},
-            'session_summary': {}
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def quick_search(request):
-    """
-    Quick search endpoint for instant results
-    """
-    try:
-        query = request.data.get('query', '').strip()
-        category = request.data.get('category', '').strip()
-        limit = min(int(request.data.get('limit', 5)), 10)
-        
-        if not query and not category:
-            return Response({
-                'error': 'Query or category required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Validate input
-        is_valid, validated_query = validate_search_input(query)
-        if query and not is_valid:
-            return Response({
-                'error': 'Invalid search query'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        results = []
-        
-        if category:
-            from .utils import search_by_category
-            results = search_by_category(category, limit)
-        elif query:
-            results = search_finda_database(validated_query, limit)
-        
-        # Format results for API response
-        formatted_results = []
-        for item in results:
-            try:
-                is_product = hasattr(item, 'product_name')
-                formatted_item = {
-                    'id': item.id,
-                    'name': getattr(item, 'product_name' if is_product else 'service_name'),
-                    'type': 'product' if is_product else 'service',
-                    'price': str(getattr(item, 'product_price' if is_product else 'starting_price', 0)),
-                    'location': item.get_full_location() if hasattr(item, 'get_full_location') else '',
-                    'rating': item.average_rating() if hasattr(item, 'average_rating') else 0,
-                    'url': item.get_absolute_url() if hasattr(item, 'get_absolute_url') else '',
-                    'image': getattr(item, 'product_image', getattr(item, 'service_image', None))
-                }
-                formatted_results.append(formatted_item)
-            except Exception as format_error:
-                logger.error(f"Result formatting error: {str(format_error)}")
-                continue
-        
-        return Response({
-            'results': formatted_results,
-            'query': query,
-            'category': category,
-            'count': len(formatted_results),
-            'total_available': len(results)
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        logger.error(f"Quick search error: {str(e)}")
-        return Response({
-            'error': 'Search failed',
-            'results': [],
-            'count': 0
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            'timestamp': datetime.now().isoformat()
+        }, status=500)

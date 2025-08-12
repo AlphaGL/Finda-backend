@@ -1,22 +1,52 @@
-# urls.py - Enhanced with new endpoints
-from django.urls import path
-from .views import chat_api, voice_chat_api, image_search_api, voice_settings_api, CustomAuthToken
+# ai_chatbot/urls.py
+from django.urls import path, include
+from . import views
+
+app_name = 'chatbot'
 
 urlpatterns = [
-    # Existing endpoints
-    path('api/', chat_api, name='chatbot-api'),
-    path('api-token-auth/', CustomAuthToken.as_view()),
+    # Main chat interface
+    path('', views.ChatInterfaceView.as_view(), name='chat_interface'),
+    path('chat/', views.ChatInterfaceView.as_view(), name='chat_interface_alt'),
     
-    # New multimedia endpoints
-    path('api/voice/', voice_chat_api, name='voice-chat-api'),
-    path('api/image/', image_search_api, name='image-search-api'),
-    path('api/voice-settings/', voice_settings_api, name='voice-settings-api'),
+    # API endpoints
+    path('api/', include([
+        # Main chat API
+        path('chat/', views.ChatAPIView.as_view(), name='chat_api'),
+        
+        # Quick search for instant results
+        path('quick-search/', views.quick_search_view, name='quick_search'),
+        
+        # Conversation management
+        path('conversation/<uuid:session_id>/', views.conversation_history_api_view, name='conversation_history'),
+        
+        # Feedback
+        path('feedback/', views.feedback_api_view, name='feedback'),
+        
+        # System status
+        path('status/', views.chatbot_status_view, name='status'),
+        
+        # File upload endpoints
+        path('upload/image/', views.ImageUploadView.as_view(), name='upload_image'),
+        path('upload/voice/', views.VoiceUploadView.as_view(), name='upload_voice'),
+        
+        # Search suggestions
+        path('suggestions/', views.SearchSuggestionsView.as_view(), name='search_suggestions'),
+        
+        # Analytics (admin only)
+        path('analytics/', views.AnalyticsAPIView.as_view(), name='analytics_api'),
+    ])),
+    
+    # Admin views
+    path('admin/', include([
+        path('analytics/', views.admin_analytics_view, name='admin_analytics'),
+        path('configuration/', views.AdminConfigurationView.as_view(), name='admin_configuration'),
+        path('sessions/', views.AdminSessionsView.as_view(), name='admin_sessions'),
+    ])),
+    
+    # Widget embed
+    path('widget/', views.ChatWidgetView.as_view(), name='chat_widget'),
+    
+    # Health check
+    path('health/', views.health_check_view, name='health_check'),
 ]
-
-
-# 📊 New Endpoints Added
-
-# GET /api/chat/history/ - Get chat history with pagination
-# DELETE /api/chat/clear/ - Clear chat history and context
-# POST /api/chat/feedback/ - Submit user feedback
-# GET /api/health/ - System health check

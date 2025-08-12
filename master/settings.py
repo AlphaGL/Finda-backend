@@ -59,6 +59,11 @@ INSTALLED_APPS = [
     'django_filters',
     'corsheaders',
 
+    # Third party app
+    'channels',
+    'django_celery_beat',
+    'django_celery_results',
+
     # cloudinary 
     'cloudinary',
     'cloudinary_storage',
@@ -232,11 +237,11 @@ WSGI_APPLICATION = 'master.wsgi.application'
 DATABASES = {
     # Supabase db
     'default': dj_database_url.parse(
-        'postgresql://postgres.jeoqgwhwkkqpzpobkeny:finda_db@aws-0-eu-north-1.pooler.supabase.com:6543/postgres'
+        'postgresql://postgres.ozehxqqzrlkrbqeoiddq:finda_db_2@aws-0-eu-north-1.pooler.supabase.com:6543/postgres'
     ),
 }
 
-# # settings.py
+# # # settings.py
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.sqlite3',
