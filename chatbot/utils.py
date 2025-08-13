@@ -225,133 +225,131 @@ class ChatAnalyticsManager:
             return 0.0
         return (analytics.positive_feedback / total_feedback) * 100
 
-
 class MessageProcessor:
-    """Processes and formats chat messages"""
+    """Enhanced message processor with better intent detection for product searches"""
     
-    @staticmethod
-    def extract_intent(message: str) -> Dict[str, Any]:
-        """Extract intent from user message"""
-        message_lower = message.lower()
-        
-        # Define intent patterns
-        intent_patterns = {
-            'product_search': ['buy', 'purchase', 'find', 'search', 'looking for', 'need', 'want'],
-            'price_inquiry': ['price', 'cost', 'how much', 'expensive', 'cheap', 'budget'],
-            'comparison': ['compare', 'vs', 'versus', 'difference', 'better', 'best'],
-            'recommendation': ['recommend', 'suggest', 'advice', 'opinion', 'what should'],
-            'location_query': ['where', 'location', 'near', 'close', 'around'],
-            'service_request': ['service', 'help with', 'assistance', 'support'],
-            'greeting': ['hello', 'hi', 'hey', 'good morning', 'good afternoon'],
-            'goodbye': ['bye', 'goodbye', 'see you', 'thanks', 'thank you']
-        }
-        
-        detected_intents = []
-        for intent, patterns in intent_patterns.items():
-            if any(pattern in message_lower for pattern in patterns):
-                detected_intents.append(intent)
-        
-        # Determine primary intent
-        primary_intent = detected_intents[0] if detected_intents else 'general_query'
-        
-        return {
-            'primary_intent': primary_intent,
-            'all_intents': detected_intents,
-            'confidence': 0.8 if detected_intents else 0.3,
-            'entities': MessageProcessor.extract_entities(message)
-        }
-    
-    @staticmethod
-    def extract_entities(message: str) -> List[Dict[str, Any]]:
-        """Extract entities from message"""
-        entities = []
-        
-        # Simple entity extraction patterns
-        import re
-        
-        # Price patterns
-        price_patterns = [
-            r'₦\s*[\d,]+(?:\.\d{2})?',  # Nigerian Naira
-            r'\$\s*[\d,]+(?:\.\d{2})?',  # Dollar
-            r'[\d,]+\s*(?:naira|dollars?|bucks)',  # Spelled out currency
+    def __init__(self):
+        # Product search keywords - enhanced list
+        self.product_keywords = [
+            'iphone', 'samsung', 'phone', 'smartphone', 'mobile', 'cell phone',
+            'laptop', 'computer', 'desktop', 'tablet', 'ipad',
+            'tv', 'television', 'smart tv', 'led tv',
+            'camera', 'digital camera', 'webcam',
+            'headphones', 'earbuds', 'airpods', 'speaker', 'bluetooth speaker',
+            'watch', 'smartwatch', 'apple watch',
+            'gaming', 'console', 'xbox', 'playstation', 'nintendo',
+            'macbook', 'windows laptop', 'chromebook',
+            'android', 'ios',
+            'keyboard', 'mouse', 'monitor', 'screen',
+            'printer', 'scanner', 'router', 'modem',
+            'charger', 'cable', 'usb cable', 'power bank',
+            'case', 'phone case', 'laptop bag',
+            'memory card', 'usb drive', 'hard drive', 'ssd',
+            'graphics card', 'processor', 'cpu', 'ram', 'motherboard'
         ]
         
-        for pattern in price_patterns:
-            matches = re.findall(pattern, message, re.IGNORECASE)
-            for match in matches:
+        # Purchase intent keywords
+        self.purchase_keywords = [
+            'buy', 'purchase', 'get', 'need', 'want', 'looking for', 'find', 'shop',
+            'order', 'price', 'cost', 'how much', 'cheap', 'expensive', 'affordable',
+            'deal', 'offer', 'discount', 'sale', 'store', 'market', 'vendor',
+            'sell', 'selling', 'available', 'stock'
+        ]
+        
+        # Service keywords
+        self.service_keywords = [
+            'repair', 'fix', 'service', 'maintenance', 'installation', 'setup',
+            'delivery', 'shipping', 'support', 'help', 'assistance', 'consultation',
+            'training', 'tutorial', 'guide', 'advice', 'recommendation'
+        ]
+    
+    def extract_intent(self, message: str) -> Dict[str, Any]:
+        """
+        Extract intent from user message with improved product detection
+        """
+        try:
+            message_lower = message.lower().strip()
+            logger.info(f"Extracting intent from: '{message_lower}'")
+            
+            # Initialize result
+            result = {
+                'primary_intent': 'general_query',
+                'all_intents': [],
+                'confidence': 0.3,
+                'entities': []
+            }
+            
+            # Check for direct product matches
+            product_matches = [keyword for keyword in self.product_keywords if keyword in message_lower]
+            purchase_matches = [keyword for keyword in self.purchase_keywords if keyword in message_lower]
+            service_matches = [keyword for keyword in self.service_keywords if keyword in message_lower]
+            
+            # Calculate scores
+            product_score = len(product_matches) * 1.0
+            purchase_score = len(purchase_matches) * 0.8
+            service_score = len(service_matches) * 0.9
+            
+            # Special handling for specific product models like "iPhone 15"
+            if any(brand in message_lower for brand in ['iphone', 'samsung', 'macbook', 'ipad']):
+                product_score += 2.0  # Boost score for specific brand mentions
+            
+            # Check for model numbers or versions
+            import re
+            if re.search(r'\b\w+\s+\d+\b', message_lower):  # Pattern like "iPhone 15", "Galaxy S23"
+                product_score += 1.5
+            
+            logger.info(f"Intent scores - Product: {product_score} (matches: {product_matches}), Purchase: {purchase_score}, Service: {service_score}")
+            
+            # Determine primary intent
+            max_score = max(product_score, purchase_score, service_score)
+            
+            if product_score >= 1.0 or (product_score > 0 and purchase_score > 0):
+                result['primary_intent'] = 'product_search'
+                result['confidence'] = min(0.95, 0.6 + (product_score * 0.1))
+            elif service_score == max_score and service_score > 0:
+                result['primary_intent'] = 'service_request'
+                result['confidence'] = min(0.9, 0.5 + (service_score * 0.1))
+            elif purchase_score > 0:
+                result['primary_intent'] = 'product_search'  # Assume product search for purchase intent
+                result['confidence'] = min(0.8, 0.4 + (purchase_score * 0.1))
+            else:
+                # For short queries that might be product names, assume product search
+                if len(message_lower.split()) <= 3 and not any(word in message_lower for word in ['how', 'what', 'why', 'when', 'where', 'hello', 'hi']):
+                    result['primary_intent'] = 'product_search'
+                    result['confidence'] = 0.7
+            
+            # Extract entities
+            entities = []
+            
+            # Add product entities
+            for match in product_matches:
                 entities.append({
-                    'type': 'price',
-                    'value': match.strip(),
+                    'type': 'product',
+                    'value': match,
                     'confidence': 0.9
                 })
-        
-        # Location patterns (Nigerian cities/states)
-        nigerian_locations = [
-            'lagos', 'abuja', 'kano', 'ibadan', 'port harcourt', 'benin', 'maiduguri',
-            'zaria', 'aba', 'jos', 'ilorin', 'oyo', 'enugu', 'abeokuta', 'kaduna',
-            'rivers state', 'lagos state', 'ogun state', 'kano state'
-        ]
-        
-        message_lower = message.lower()
-        for location in nigerian_locations:
-            if location in message_lower:
+            
+            # Add purchase intent entities
+            for match in purchase_matches:
                 entities.append({
-                    'type': 'location',
-                    'value': location.title(),
-                    'confidence': 0.85
+                    'type': 'purchase_intent',
+                    'value': match,
+                    'confidence': 0.8
                 })
-        
-        return entities
-    
-    @staticmethod
-    def format_response(response: str, context: Dict = None) -> str:
-        """Format AI response with context"""
-        try:
-            # Add personalization if user context available
-            if context and context.get('user_name'):
-                if not response.startswith(context['user_name']):
-                    response = f"Hi {context['user_name']}! {response}"
             
-            # Ensure proper formatting
-            response = response.strip()
-            if not response.endswith(('.', '!', '?')):
-                response += '.'
+            result['entities'] = entities
             
-            return response
+            logger.info(f"Final intent result: {result}")
+            return result
             
         except Exception as e:
-            logger.error(f"Error formatting response: {str(e)}")
-            return response
-    
-    @staticmethod
-    def validate_message(message: str, message_type: str = 'text') -> Dict[str, Any]:
-        """Validate message content"""
-        validation_result = {
-            'is_valid': True,
-            'errors': [],
-            'warnings': []
-        }
-        
-        # Check message length
-        if message_type == 'text':
-            if len(message) > 2000:
-                validation_result['is_valid'] = False
-                validation_result['errors'].append('Message too long (max 2000 characters)')
-            
-            if len(message.strip()) < 1:
-                validation_result['is_valid'] = False
-                validation_result['errors'].append('Message cannot be empty')
-        
-        # Check for spam patterns
-        spam_indicators = ['http://', 'https://', '@', 'www.', '.com', '.ng']
-        spam_count = sum(1 for indicator in spam_indicators if indicator in message.lower())
-        
-        if spam_count > 2:
-            validation_result['warnings'].append('Message might contain spam')
-        
-        return validation_result
-
-
+            logger.error(f"Error extracting intent: {str(e)}")
+            return {
+                'primary_intent': 'product_search',  # Default to product search on error
+                'all_intents': [],
+                'confidence': 0.6,
+                'entities': []
+            }
 class SearchHelper:
     """Helper functions for search operations"""
     

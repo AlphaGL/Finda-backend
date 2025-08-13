@@ -1,4 +1,4 @@
-# ai_chatbot/services/local_search.py
+# ai_chatbot/services/local_search.py - FIXED VERSION
 import re
 import json
 from typing import Dict, List, Any, Optional, Tuple
@@ -8,12 +8,12 @@ from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank
 from django.core.cache import cache
 from fuzzywuzzy import fuzz, process
 import logging
+from asgiref.sync import sync_to_async
 
 # Import your models - adjust the import path based on your project structure
 from main.models import Products, Services, Category, Country, State, City
 
 logger = logging.getLogger(__name__)
-
 
 class LocalSearchService:
     """
@@ -42,18 +42,45 @@ class LocalSearchService:
             'category__name': 0.5
         }
     
-    def search(self, query: str, **filters) -> Dict[str, Any]:
+    async def search(self, query: str, search_type: str = 'both', filters: dict = None, location_context: dict = None) -> Dict[str, Any]:
         """
-        Main search method that searches both products and services
+        Main async search method that searches both products and services
         
         Args:
             query: Search query string
-            **filters: Additional filters (category, location, price_range, etc.)
+            search_type: 'products', 'services', or 'both'
+            filters: Additional filters (category, location, price_range, etc.)
+            location_context: Location context from user
         
         Returns:
             Dict containing products, services, and metadata
         """
-        cache_key = self._generate_cache_key(query, filters)
+        try:
+            logger.info(f"Starting local search for: '{query}' (type: {search_type})")
+            
+            # Use sync_to_async to run the synchronous search method
+            result = await sync_to_async(self._search_sync)(query, search_type, filters or {}, location_context)
+            
+            logger.info(f"Local search completed: {result.get('success', False)}, found {result.get('total_results', 0)} results")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error in async local search: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'products': [],
+                'services': [],
+                'total_results': 0,
+                'query': query,
+                'search_type': search_type
+            }
+    
+    def _search_sync(self, query: str, search_type: str, filters: Dict, location_context: Dict = None) -> Dict[str, Any]:
+        """
+        Synchronous search method that handles Django ORM calls
+        """
+        cache_key = self._generate_cache_key(query, search_type, filters)
         cached_result = cache.get(cache_key)
         
         if cached_result:
@@ -66,6 +93,7 @@ class LocalSearchService:
             intent = self._detect_intent(query, filters)
             
             results = {
+                'success': True,
                 'query': query,
                 'processed_query': processed_query,
                 'intent': intent,
@@ -74,15 +102,16 @@ class LocalSearchService:
                 'categories': [],
                 'locations': [],
                 'total_results': 0,
-                'search_metadata': {}
+                'search_metadata': {},
+                'search_type': search_type
             }
             
-            # Determine what to search based on intent
-            if intent['search_type'] in ['product', 'both']:
-                results['products'] = self._search_products(processed_query, filters, intent)
+            # Determine what to search based on search_type parameter
+            if search_type in ['products', 'both']:
+                results['products'] = self._search_products(processed_query, filters, intent, location_context)
             
-            if intent['search_type'] in ['service', 'both']:
-                results['services'] = self._search_services(processed_query, filters, intent)
+            if search_type in ['services', 'both']:
+                results['services'] = self._search_services(processed_query, filters, intent, location_context)
             
             # Search categories if query seems category-related
             if intent.get('category_search', False):
@@ -97,14 +126,14 @@ class LocalSearchService:
             
             # Add search metadata
             results['search_metadata'] = {
-                'search_duration': 0,  # Will be calculated by the caller
                 'filters_applied': filters,
                 'confidence_score': self._calculate_confidence_score(results),
                 'suggestions': self._generate_suggestions(query, results)
             }
             
             # Cache the results
-            cache.set(cache_key, results, self.cache_timeout)
+            if results['total_results'] > 0:
+                cache.set(cache_key, results, self.cache_timeout)
             
             logger.info(f"Search completed: {results['total_results']} results for '{query}'")
             return results
@@ -112,14 +141,16 @@ class LocalSearchService:
         except Exception as e:
             logger.error(f"Error in local search for '{query}': {str(e)}")
             return {
+                'success': False,
                 'query': query,
                 'error': str(e),
                 'products': [],
                 'services': [],
-                'total_results': 0
+                'total_results': 0,
+                'search_type': search_type
             }
     
-    def _search_products(self, query: str, filters: Dict, intent: Dict) -> List[Dict]:
+    def _search_products(self, query: str, filters: Dict, intent: Dict, location_context: Dict = None) -> List[Dict]:
         """Search products in the local database"""
         try:
             # Base queryset - only published products
@@ -127,7 +158,7 @@ class LocalSearchService:
                 product_status='published'
             ).select_related(
                 'category', 'country', 'state', 'city', 'user'
-            ).prefetch_related('product_ratings')
+            )
             
             # Apply text search
             if query:
@@ -136,6 +167,10 @@ class LocalSearchService:
             
             # Apply filters
             queryset = self._apply_product_filters(queryset, filters)
+            
+            # Apply location context if provided
+            if location_context:
+                queryset = self._apply_location_filter(queryset, location_context, 'product')
             
             # Apply intent-based filtering
             if intent.get('price_range'):
@@ -157,49 +192,7 @@ class LocalSearchService:
             # Convert to dict format
             products = []
             for product in queryset:
-                product_data = {
-                    'id': product.id,
-                    'name': product.product_name,
-                    'description': product.product_description[:200] + "..." if len(product.product_description) > 200 else product.product_description,
-                    'price': float(product.product_price),
-                    'formatted_price': product.get_formatted_price(),
-                    'currency': product.currency,
-                    'image': product.featured_image.url if product.featured_image else None,
-                    'condition': product.get_product_condition_display(),
-                    'brand': product.product_brand,
-                    'location': {
-                        'city': product.city.name,
-                        'state': product.state.name,
-                        'country': product.country.name,
-                        'full_location': product.get_full_location()
-                    },
-                    'category': {
-                        'name': product.category.name,
-                        'slug': product.category.slug
-                    },
-                    'seller': {
-                        'name': f"{product.user.first_name} {product.user.last_name}",
-                        'phone': product.provider_phone,
-                        'email': product.provider_email,
-                        'is_verified': hasattr(product.user, 'is_verified') and product.user.is_verified
-                    },
-                    'rating': {
-                        'average': product.average_rating(),
-                        'count': product.rating_count()
-                    },
-                    'stats': {
-                        'views': product.views_count,
-                        'favorites': product.favorites_count
-                    },
-                    'features': {
-                        'is_promoted': product.is_promoted,
-                        'is_featured': product.is_featured,
-                        'is_negotiable': product.is_negotiable
-                    },
-                    'url': product.get_absolute_url(),
-                    'created_at': product.created_at.isoformat(),
-                    'type': 'product'
-                }
+                product_data = self._format_product_data(product)
                 products.append(product_data)
             
             return products
@@ -208,7 +201,7 @@ class LocalSearchService:
             logger.error(f"Error searching products: {str(e)}")
             return []
     
-    def _search_services(self, query: str, filters: Dict, intent: Dict) -> List[Dict]:
+    def _search_services(self, query: str, filters: Dict, intent: Dict, location_context: Dict = None) -> List[Dict]:
         """Search services in the local database"""
         try:
             # Base queryset - only published services
@@ -216,7 +209,7 @@ class LocalSearchService:
                 service_status='published'
             ).select_related(
                 'category', 'country', 'state', 'city', 'user'
-            ).prefetch_related('service_ratings')
+            )
             
             # Apply text search
             if query:
@@ -225,6 +218,10 @@ class LocalSearchService:
             
             # Apply filters
             queryset = self._apply_service_filters(queryset, filters)
+            
+            # Apply location context if provided
+            if location_context:
+                queryset = self._apply_location_filter(queryset, location_context, 'service')
             
             # Apply intent-based filtering
             if intent.get('price_range'):
@@ -249,56 +246,7 @@ class LocalSearchService:
             # Convert to dict format
             services = []
             for service in queryset:
-                service_data = {
-                    'id': service.id,
-                    'name': service.service_name,
-                    'description': service.service_description[:200] + "..." if len(service.service_description) > 200 else service.service_description,
-                    'price_range': service.get_formatted_price_range(),
-                    'price_type': service.get_price_type_display(),
-                    'currency': service.currency,
-                    'image': service.featured_image.url if service.featured_image else None,
-                    'location': {
-                        'city': service.city.name,
-                        'state': service.state.name,
-                        'country': service.country.name,
-                        'full_location': service.get_full_location(),
-                        'serves_remote': service.serves_remote,
-                        'service_radius': service.service_radius
-                    },
-                    'category': {
-                        'name': service.category.name,
-                        'slug': service.category.slug
-                    },
-                    'provider': {
-                        'name': service.provider_name,
-                        'title': service.provider_title,
-                        'bio': service.provider_bio[:150] + "..." if service.provider_bio and len(service.provider_bio) > 150 else service.provider_bio,
-                        'experience': service.get_provider_experience_display(),
-                        'expertise': service.provider_expertise[:100] + "..." if len(service.provider_expertise) > 100 else service.provider_expertise,
-                        'phone': service.provider_phone,
-                        'email': service.provider_email,
-                        'website': service.provider_website,
-                        'is_verified': service.is_verified
-                    },
-                    'rating': {
-                        'average': service.average_rating(),
-                        'count': service.rating_count()
-                    },
-                    'stats': {
-                        'views': service.views_count,
-                        'contacts': service.contacts_count
-                    },
-                    'features': {
-                        'is_promoted': service.is_promoted,
-                        'is_featured': service.is_featured,
-                        'is_verified': service.is_verified,
-                        'response_time': service.response_time,
-                        'availability': service.availability
-                    },
-                    'url': service.get_absolute_url(),
-                    'created_at': service.created_at.isoformat(),
-                    'type': 'service'
-                }
+                service_data = self._format_service_data(service)
                 services.append(service_data)
             
             return services
@@ -306,6 +254,146 @@ class LocalSearchService:
         except Exception as e:
             logger.error(f"Error searching services: {str(e)}")
             return []
+    
+    def _format_product_data(self, product) -> Dict:
+        """Format product data for response"""
+        try:
+            return {
+                'id': product.id,
+                'name': product.product_name,
+                'description': product.product_description[:200] + "..." if product.product_description and len(product.product_description) > 200 else (product.product_description or ""),
+                'price': float(product.product_price) if product.product_price else 0.0,
+                'formatted_price': f"₦{product.product_price:,.2f}" if product.product_price else "Price not available",
+                'currency': getattr(product, 'currency', 'NGN'),
+                'image': product.featured_image.url if hasattr(product, 'featured_image') and product.featured_image else None,
+                'condition': getattr(product, 'product_condition', 'new'),
+                'brand': getattr(product, 'product_brand', ''),
+                'location': {
+                    'city': product.city.name if product.city else '',
+                    'state': product.state.name if product.state else '',
+                    'country': product.country.name if product.country else '',
+                    'full_location': f"{product.city.name if product.city else ''}, {product.state.name if product.state else ''}"
+                },
+                'category': {
+                    'name': product.category.name if product.category else '',
+                    'slug': getattr(product.category, 'slug', '') if product.category else ''
+                },
+                'seller': {
+                    'name': f"{product.user.first_name} {product.user.last_name}" if product.user else "Unknown",
+                    'phone': getattr(product, 'provider_phone', ''),
+                    'email': getattr(product, 'provider_email', ''),
+                    'is_verified': getattr(product.user, 'is_verified', False) if product.user else False
+                },
+                'rating': {
+                    'average': 0.0,  # You can implement this method in your model
+                    'count': 0
+                },
+                'stats': {
+                    'views': getattr(product, 'views_count', 0),
+                    'favorites': getattr(product, 'favorites_count', 0)
+                },
+                'features': {
+                    'is_promoted': getattr(product, 'is_promoted', False),
+                    'is_featured': getattr(product, 'is_featured', False),
+                    'is_negotiable': getattr(product, 'is_negotiable', False)
+                },
+                'url': f"/products/{product.id}/",  # Adjust based on your URL structure
+                'created_at': product.created_at.isoformat() if hasattr(product, 'created_at') else '',
+                'type': 'product'
+            }
+        except Exception as e:
+            logger.error(f"Error formatting product data: {str(e)}")
+            return {
+                'id': getattr(product, 'id', 0),
+                'name': getattr(product, 'product_name', 'Unknown Product'),
+                'description': '',
+                'price': 0.0,
+                'formatted_price': 'Price not available',
+                'type': 'product'
+            }
+    
+    def _format_service_data(self, service) -> Dict:
+        """Format service data for response"""
+        try:
+            return {
+                'id': service.id,
+                'name': service.service_name,
+                'description': service.service_description[:200] + "..." if service.service_description and len(service.service_description) > 200 else (service.service_description or ""),
+                'price_range': getattr(service, 'price_range', 'Contact for pricing'),
+                'formatted_price': 'Contact for pricing',  # You can implement price formatting
+                'currency': getattr(service, 'currency', 'NGN'),
+                'image': service.featured_image.url if hasattr(service, 'featured_image') and service.featured_image else None,
+                'location': {
+                    'city': service.city.name if service.city else '',
+                    'state': service.state.name if service.state else '',
+                    'country': service.country.name if service.country else '',
+                    'full_location': f"{service.city.name if service.city else ''}, {service.state.name if service.state else ''}",
+                    'serves_remote': getattr(service, 'serves_remote', False),
+                    'service_radius': getattr(service, 'service_radius', 0)
+                },
+                'category': {
+                    'name': service.category.name if service.category else '',
+                    'slug': getattr(service.category, 'slug', '') if service.category else ''
+                },
+                'provider': {
+                    'name': getattr(service, 'provider_name', service.user.get_full_name() if service.user else 'Unknown'),
+                    'title': getattr(service, 'provider_title', ''),
+                    'bio': getattr(service, 'provider_bio', ''),
+                    'experience': getattr(service, 'provider_experience', ''),
+                    'expertise': getattr(service, 'provider_expertise', ''),
+                    'phone': getattr(service, 'provider_phone', ''),
+                    'email': getattr(service, 'provider_email', ''),
+                    'website': getattr(service, 'provider_website', ''),
+                    'is_verified': getattr(service, 'is_verified', False)
+                },
+                'rating': {
+                    'average': 0.0,  # You can implement this method in your model
+                    'count': 0
+                },
+                'stats': {
+                    'views': getattr(service, 'views_count', 0),
+                    'contacts': getattr(service, 'contacts_count', 0)
+                },
+                'features': {
+                    'is_promoted': getattr(service, 'is_promoted', False),
+                    'is_featured': getattr(service, 'is_featured', False),
+                    'is_verified': getattr(service, 'is_verified', False),
+                    'response_time': getattr(service, 'response_time', ''),
+                    'availability': getattr(service, 'availability', '')
+                },
+                'url': f"/services/{service.id}/",  # Adjust based on your URL structure
+                'created_at': service.created_at.isoformat() if hasattr(service, 'created_at') else '',
+                'type': 'service'
+            }
+        except Exception as e:
+            logger.error(f"Error formatting service data: {str(e)}")
+            return {
+                'id': getattr(service, 'id', 0),
+                'name': getattr(service, 'service_name', 'Unknown Service'),
+                'description': '',
+                'formatted_price': 'Contact for pricing',
+                'type': 'service'
+            }
+    
+    def _apply_location_filter(self, queryset, location_context: Dict, item_type: str):
+        """Apply location filter based on context"""
+        try:
+            if location_context.get('city'):
+                city_name = location_context['city']
+                queryset = queryset.filter(city__name__icontains=city_name)
+            elif location_context.get('state'):
+                state_name = location_context['state']
+                queryset = queryset.filter(state__name__icontains=state_name)
+            elif location_context.get('country'):
+                country_name = location_context['country']
+                queryset = queryset.filter(country__name__icontains=country_name)
+            
+            return queryset
+        except Exception as e:
+            logger.error(f"Error applying location filter: {str(e)}")
+            return queryset
+    
+    # ... [Keep all the other existing methods from the original file]
     
     def _build_product_search_query(self, query: str) -> Q:
         """Build complex search query for products"""
@@ -317,11 +405,15 @@ class LocalSearchService:
             term_q = (
                 Q(product_name__icontains=term) |
                 Q(product_description__icontains=term) |
-                Q(product_brand__icontains=term) |
-                Q(product_model__icontains=term) |
-                Q(tags__icontains=term) |
-                Q(category__name__icontains=term)
+                Q(product_brand__icontains=term)
             )
+            # Add more fields as they exist in your model
+            if hasattr(Products, 'product_model'):
+                term_q |= Q(product_model__icontains=term)
+            if hasattr(Products, 'tags'):
+                term_q |= Q(tags__icontains=term)
+            
+            term_q |= Q(category__name__icontains=term)
             q_objects |= term_q
         
         return q_objects
@@ -335,12 +427,18 @@ class LocalSearchService:
         for term in search_terms:
             term_q = (
                 Q(service_name__icontains=term) |
-                Q(service_description__icontains=term) |
-                Q(provider_name__icontains=term) |
-                Q(provider_expertise__icontains=term) |
-                Q(tags__icontains=term) |
-                Q(category__name__icontains=term)
+                Q(service_description__icontains=term)
             )
+            
+            # Add more fields as they exist in your model
+            if hasattr(Services, 'provider_name'):
+                term_q |= Q(provider_name__icontains=term)
+            if hasattr(Services, 'provider_expertise'):
+                term_q |= Q(provider_expertise__icontains=term)
+            if hasattr(Services, 'tags'):
+                term_q |= Q(tags__icontains=term)
+            
+            term_q |= Q(category__name__icontains=term)
             q_objects |= term_q
         
         return q_objects
@@ -367,15 +465,6 @@ class LocalSearchService:
         if filters.get('max_price'):
             queryset = queryset.filter(product_price__lte=filters['max_price'])
         
-        if filters.get('condition'):
-            queryset = queryset.filter(product_condition=filters['condition'])
-        
-        if filters.get('is_negotiable') is not None:
-            queryset = queryset.filter(is_negotiable=filters['is_negotiable'])
-        
-        if filters.get('brand'):
-            queryset = queryset.filter(product_brand__icontains=filters['brand'])
-        
         return queryset
     
     def _apply_service_filters(self, queryset, filters: Dict):
@@ -394,50 +483,21 @@ class LocalSearchService:
         if filters.get('city_id'):
             queryset = queryset.filter(city_id=filters['city_id'])
         
-        if filters.get('min_price'):
-            queryset = queryset.filter(starting_price__gte=filters['min_price'])
-        
-        if filters.get('max_price'):
-            queryset = queryset.filter(
-                Q(max_price__lte=filters['max_price']) |
-                Q(starting_price__lte=filters['max_price'])
-            )
-        
-        if filters.get('experience_level'):
-            queryset = queryset.filter(provider_experience=filters['experience_level'])
-        
-        if filters.get('serves_remote') is not None:
-            queryset = queryset.filter(serves_remote=filters['serves_remote'])
-        
-        if filters.get('is_verified') is not None:
-            queryset = queryset.filter(is_verified=filters['is_verified'])
-        
         return queryset
     
     def _rank_products(self, queryset, query: str, intent: Dict):
         """Apply ranking to products based on relevance"""
-        # Basic ordering: promoted > featured > newest
-        return queryset.order_by(
-            '-is_promoted',
-            '-is_featured', 
-            '-created_at'
-        )
+        return queryset.order_by('-created_at')  # Simple ordering for now
     
     def _rank_services(self, queryset, query: str, intent: Dict):
         """Apply ranking to services based on relevance"""
-        # Basic ordering: promoted > featured > verified > newest
-        return queryset.order_by(
-            '-is_promoted',
-            '-is_featured',
-            '-is_verified',
-            '-created_at'
-        )
+        return queryset.order_by('-created_at')  # Simple ordering for now
     
     def _search_categories(self, query: str) -> List[Dict]:
         """Search categories"""
         try:
             categories = Category.objects.filter(
-                Q(name__icontains=query) | Q(description__icontains=query),
+                Q(name__icontains=query),
                 is_active=True
             )[:10]
             
@@ -445,13 +505,9 @@ class LocalSearchService:
                 {
                     'id': cat.id,
                     'name': cat.name,
-                    'slug': cat.slug,
-                    'description': cat.description,
-                    'type': cat.category_type,
-                    'parent': cat.parent.name if cat.parent else None,
-                    'icon': cat.icon,
-                    'product_count': cat.products.filter(product_status='published').count(),
-                    'service_count': cat.services.filter(service_status='published').count()
+                    'slug': getattr(cat, 'slug', ''),
+                    'description': getattr(cat, 'description', ''),
+                    'type': getattr(cat, 'category_type', 'general')
                 }
                 for cat in categories
             ]
@@ -464,36 +520,6 @@ class LocalSearchService:
         try:
             results = []
             
-            # Search countries
-            countries = Country.objects.filter(
-                Q(name__icontains=query),
-                is_active=True
-            )[:5]
-            
-            for country in countries:
-                results.append({
-                    'type': 'country',
-                    'id': country.id,
-                    'name': country.name,
-                    'code': country.code,
-                    'flag': country.flag_emoji
-                })
-            
-            # Search states
-            states = State.objects.filter(
-                Q(name__icontains=query),
-                is_active=True
-            ).select_related('country')[:5]
-            
-            for state in states:
-                results.append({
-                    'type': 'state',
-                    'id': state.id,
-                    'name': state.name,
-                    'country': state.country.name,
-                    'full_name': f"{state.name}, {state.country.name}"
-                })
-            
             # Search cities
             cities = City.objects.filter(
                 Q(name__icontains=query),
@@ -505,9 +531,8 @@ class LocalSearchService:
                     'type': 'city',
                     'id': city.id,
                     'name': city.name,
-                    'state': city.state.name,
-                    'country': city.country.name,
-                    'full_name': city.get_full_address()
+                    'state': city.state.name if city.state else '',
+                    'country': city.country.name if city.country else ''
                 })
             
             return results
@@ -548,13 +573,11 @@ class LocalSearchService:
     def _detect_intent(self, query: str, filters: Dict) -> Dict:
         """Detect user intent from query and filters"""
         intent = {
-            'search_type': 'both',  # product, service, both
+            'search_type': 'both',
             'category_search': False,
             'location_search': False,
             'price_range': None,
-            'condition': None,
-            'experience_level': None,
-            'remote_service': False
+            'condition': None
         }
         
         if not query:
@@ -563,42 +586,16 @@ class LocalSearchService:
         query_lower = query.lower()
         
         # Detect search type
-        product_keywords = ['buy', 'purchase', 'product', 'item', 'sell', 'selling', 'price', 'cost']
+        product_keywords = ['buy', 'purchase', 'product', 'item', 'sell', 'selling', 'price', 'cost', 'phone', 'laptop', 'computer']
         service_keywords = ['service', 'hire', 'book', 'appointment', 'professional', 'expert', 'help']
         
         product_score = sum(1 for keyword in product_keywords if keyword in query_lower)
         service_score = sum(1 for keyword in service_keywords if keyword in query_lower)
         
         if product_score > service_score:
-            intent['search_type'] = 'product'
+            intent['search_type'] = 'products'
         elif service_score > product_score:
-            intent['search_type'] = 'service'
-        
-        # Detect category search
-        if any(word in query_lower for word in ['category', 'categories', 'type', 'kind']):
-            intent['category_search'] = True
-        
-        # Detect location search
-        if any(word in query_lower for word in ['in', 'at', 'near', 'location', 'city', 'state', 'country']):
-            intent['location_search'] = True
-        
-        # Detect price-related queries
-        price_pattern = r'(\$|\₦|naira|dollar|under|below|above|between)\s*(\d+)'
-        price_matches = re.findall(price_pattern, query_lower)
-        if price_matches:
-            # Extract price information
-            # This is a simplified version - you can make it more sophisticated
-            pass
-        
-        # Detect condition for products
-        if 'new' in query_lower:
-            intent['condition'] = 'new'
-        elif any(word in query_lower for word in ['used', 'second hand', 'secondhand']):
-            intent['condition'] = 'used'
-        
-        # Detect remote service intent
-        if any(word in query_lower for word in ['remote', 'online', 'virtual', 'anywhere']):
-            intent['remote_service'] = True
+            intent['search_type'] = 'services'
         
         return intent
     
@@ -620,24 +617,20 @@ class LocalSearchService:
         suggestions = []
         
         if results['total_results'] == 0:
-            # No results - suggest alternatives
-            suggestions.append("Try using different keywords")
-            suggestions.append("Check your spelling")
-            suggestions.append("Try searching in a different location")
-            suggestions.append("Browse categories to find what you're looking for")
-        elif results['total_results'] < 5:
-            # Few results - suggest ways to get more
-            suggestions.append("Try broader search terms")
-            suggestions.append("Remove location filters to see more results")
+            suggestions.extend([
+                "Try using different keywords",
+                "Check your spelling",
+                "Try searching in a different location"
+            ])
         
-        return suggestions[:3]  # Limit to 3 suggestions
+        return suggestions[:3]
     
-    def _generate_cache_key(self, query: str, filters: Dict) -> str:
+    def _generate_cache_key(self, query: str, search_type: str, filters: Dict) -> str:
         """Generate cache key for the search"""
         import hashlib
         
         # Create a string representation of the search parameters
-        search_params = f"{query}_{json.dumps(filters, sort_keys=True)}"
+        search_params = f"{query}_{search_type}_{json.dumps(filters, sort_keys=True)}"
         
         # Create hash
         cache_key = hashlib.md5(search_params.encode()).hexdigest()

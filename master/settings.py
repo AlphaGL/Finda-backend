@@ -331,6 +331,62 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Add these to your Django settings.py file
+
+# SerpAPI Configuration
+SERPAPI_CONFIG = {
+    'ENABLED': True,
+    'API_KEY': '7e724f18b98b7b44714da50a198ddc2ca5fe92b051a0cd51f129c3887a0893f6',
+    'TIMEOUT': 15,  # seconds
+    'MAX_RESULTS': 10,
+    'DEFAULT_LOCATION': 'Nigeria'
+}
+
+# Chatbot Settings
+CHATBOT_SETTINGS = {
+    'EXTERNAL_SEARCH_ENABLED': True,
+    'MIN_LOCAL_RESULTS_THRESHOLD': 3,  # Minimum local results before trying external
+    'MAX_EXTERNAL_RESULTS': 10,
+    'SEARCH_CACHE_TIMEOUT': 1800,  # 30 minutes
+    'DEFAULT_SEARCH_STRATEGY': 'hybrid_local_first',
+    'ENABLE_CONCURRENT_SEARCH': True,
+}
+
+# Cache Configuration (if not already configured)
+
+# Logging Configuration (add to existing LOGGING config)
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': 'logs/chatbot.log',
+            'formatter': 'verbose',
+        },
+        'console': {
+            'level': 'DEBUG',
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'ai_chatbot': {
+            'handlers': ['file', 'console'],
+            'level': 'INFO',
+            'propagate': True,
+        },
+    },
+}
+
+
 # ===========================
 #  LOGGING CONFIGURATION
 # ===========================
