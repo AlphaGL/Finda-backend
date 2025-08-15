@@ -54,7 +54,7 @@ INSTALLED_APPS = [
     'django_filters',              # Product filtering
     'corsheaders',                 # API access
     # 'mptt',                        # Category hierarchies
-    'taggit',                      # Product tags
+    # 'taggit',                      # Product tags
 
     # Background tasks for order processing & chatbot
     'django_celery_beat',
