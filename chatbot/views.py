@@ -180,7 +180,7 @@ class ChatAPIView(View):
             final_response_text = processing_result.get('response', processing_result.get('final_response', ''))
             
             # FIXED: Extract search results correctly based on SmartChatbotRouter structure
-            search_results = processing_result.get('search_results', {})
+            search_results = processing_result.get('search_results') or {}
             
             # Handle both possible structures
             if 'local' in search_results and 'external' in search_results:
@@ -299,7 +299,7 @@ class ChatAPIView(View):
             self._save_search_data_sync(processing_result, user_message)
         
         # Extract search results for counting
-        search_results = processing_result.get('search_results', {})
+        search_results = processing_result.get('search_results') or {}
         local_results = search_results.get('local', processing_result.get('local_results', {}))
         external_results = search_results.get('external', processing_result.get('external_results', {}))
         
@@ -385,7 +385,7 @@ class ChatAPIView(View):
             intent = processing_result.get('intent', {})
             
             # Extract search results
-            search_results = processing_result.get('search_results', {})
+            search_results = processing_result.get('search_results') or {}
             local_results = search_results.get('local', processing_result.get('local_results', {}))
             external_results = search_results.get('external', processing_result.get('external_results', {}))
             
@@ -417,7 +417,7 @@ class ChatAPIView(View):
             results_to_create = []
             
             # Extract search results
-            search_results = processing_result.get('search_results', {})
+            search_results = processing_result.get('search_results') or {}
             local_results = search_results.get('local', processing_result.get('local_results', {}))
             external_results = search_results.get('external', processing_result.get('external_results', {}))
             
@@ -473,7 +473,7 @@ class ChatAPIView(View):
     async def _update_analytics(self, processing_result, chat_session):
         """Update analytics"""
         try:
-            search_results = processing_result.get('search_results', {})
+            search_results = processing_result.get('search_results') or {}
             local_results = search_results.get('local', processing_result.get('local_results', {}))
             external_results = search_results.get('external', processing_result.get('external_results', {}))
             
@@ -497,7 +497,7 @@ class ChatAPIView(View):
         """Generate suggested actions"""
         suggestions = []
         
-        search_results = processing_result.get('search_results', {})
+        search_results = processing_result.get('search_results') or {}
         local_results = search_results.get('local', processing_result.get('local_results', {}))
         external_results = search_results.get('external', processing_result.get('external_results', {}))
         
