@@ -8,6 +8,7 @@ Django==5.2.4
 djangorestframework==3.16.0
 gunicorn==20.1.0
 whitenoise==6.9.0
+drf-spectacular
 
 # Database
 psycopg2-binary==2.9.10
@@ -26,7 +27,7 @@ cryptography==45.0.5
 # Ecommerce essentials
 django-filter==25.1
 django-countries==7.6.1
-stripe==7.7.0  # For payments (alternative to Paystack)
+django-autoslug==1.9.9
 
 # File Storage and Media
 cloudinary==1.44.1
@@ -36,62 +37,53 @@ Pillow==10.0.0
 # Cache and Background Tasks
 redis==4.6.0
 celery==5.5.3
-django-celery-beat==2.6.0
-django-celery-results==2.5.0
-kombu==5.3.0
-billiard==4.1.0
-vine==5.0.0
+django-celery-beat>=2.6.0
+django-celery-results>=2.5.0
+kombu>=5.3.0
+billiard>=4.1.0
+vine>=5.0.0
 
 # Chatbot AI/ML (Essential only - lightweight)
 google-generativeai==0.8.5
+google-api-core==2.25.1
 google-api-python-client==2.176.0
 google-auth==2.40.3
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.0.0
+google-ai-generativelanguage==0.6.15
+googleapis-common-protos==1.70.0
+proto-plus==1.26.1
+protobuf==4.23.3
 
 # Lightweight NLP for chatbot
 nltk==3.9.1
-sentence-transformers==2.2.2  # For semantic search
-transformers==4.30.2  # For text processing
-torch==2.7.1  # Required for transformers (CPU only)
+sentence-transformers==2.2.2
+transformers==4.30.2
+torch==2.7.1
+tokenizers==0.13.3
+huggingface-hub==0.33.2
+safetensors==0.5.3
 
 # Audio Processing for voice chatbot
-SpeechRecognition==3.10.0
+SpeechRecognition>=3.10.0
 gtts==2.3.2
-pydub==0.25.1
+pydub>=0.25.1
 
 # HTTP and API clients
 requests==2.32.4
 aiohttp==3.8.6
-beautifulsoup4==4.12.3
+beautifulsoup4
+urllib3==2.5.0
+certifi==2025.7.9
 
 # Data processing for ecommerce
-pandas==1.5.3  # For product analytics
-numpy==1.24.3  # Required for ML libraries
-
-# Search functionality
-whoosh==2.7.4  # Lightweight search engine for products
+pandas==1.5.3
+numpy==1.23.5  # Keep your exact version
+joblib==1.2.0
 
 # Essential utilities
 python-dateutil==2.8.2
 pytz==2022.7.1
-certifi==2025.7.9
-urllib3==2.5.0
-
-# Core dependencies
-asgiref==3.9.1
-sqlparse==0.4.3
-tzdata==2025.2
-
-# Ecommerce specific
-python-slugify==8.0.1  # For SEO-friendly URLs
-django-mptt==0.16.0    # For category hierarchies
-django-taggit==5.0.1   # For product tags
-
-# Payment processing
-paystack==1.6.1  # Since you're using Paystack
-
-# Additional essential dependencies from original file
 click>=7.1.1,<8.2
 colorama==0.4.6
 idna==3.10
@@ -100,7 +92,26 @@ MarkupSafe==3.0.2
 packaging==20.9
 six==1.17.0
 tqdm==4.67.1
-typing_extensions==4.14.0
+typing_extensions==4.14.1
+
+# Core dependencies
+asgiref==3.9.1
+sqlparse==0.4.3
+tzdata==2025.2
+charset-normalizer==3.4.2
+attrs==22.1.0
+multidict==5.2.0
+yarl==1.20.1
+frozenlist==1.7.0
+aiosignal==1.4.0
+async-timeout==4.0.3
+
+# Additional essential from your original
+PyYAML==6.0.2
+jsonschema==4.17.3
+pyrsistent==0.20.0
+filelock==3.18.0
+regex==2022.10.31
 
 # Removed heavy dependencies that cause slowness:
 # tensorflow==2.12.0          # Too heavy - use transformers instead
