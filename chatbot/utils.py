@@ -263,93 +263,173 @@ class MessageProcessor:
             'training', 'tutorial', 'guide', 'advice', 'recommendation'
         ]
     
+    # def extract_intent(self, message: str) -> Dict[str, Any]:
+    #     """
+    #     Extract intent from user message with improved product detection
+    #     """
+    #     try:
+    #         message_lower = message.lower().strip()
+    #         logger.info(f"Extracting intent from: '{message_lower}'")
+            
+    #         # Initialize result
+    #         result = {
+    #             'primary_intent': 'general_query',
+    #             'all_intents': [],
+    #             'confidence': 0.3,
+    #             'entities': []
+    #         }
+            
+    #         # Check for direct product matches
+    #         product_matches = [keyword for keyword in self.product_keywords if keyword in message_lower]
+    #         purchase_matches = [keyword for keyword in self.purchase_keywords if keyword in message_lower]
+    #         service_matches = [keyword for keyword in self.service_keywords if keyword in message_lower]
+            
+    #         # Calculate scores
+    #         product_score = len(product_matches) * 1.0
+    #         purchase_score = len(purchase_matches) * 0.8
+    #         service_score = len(service_matches) * 0.9
+            
+    #         # Special handling for specific product models like "iPhone 15"
+    #         if any(brand in message_lower for brand in ['iphone', 'samsung', 'macbook', 'ipad']):
+    #             product_score += 2.0  # Boost score for specific brand mentions
+            
+    #         # Check for model numbers or versions
+    #         import re
+    #         if re.search(r'\b\w+\s+\d+\b', message_lower):  # Pattern like "iPhone 15", "Galaxy S23"
+    #             product_score += 1.5
+            
+    #         logger.info(f"Intent scores - Product: {product_score} (matches: {product_matches}), Purchase: {purchase_score}, Service: {service_score}")
+            
+    #         # Determine primary intent
+    #         max_score = max(product_score, purchase_score, service_score)
+            
+    #         if product_score >= 1.0 or (product_score > 0 and purchase_score > 0):
+    #             result['primary_intent'] = 'product_search'
+    #             result['confidence'] = min(0.95, 0.6 + (product_score * 0.1))
+    #         elif service_score == max_score and service_score > 0:
+    #             result['primary_intent'] = 'service_request'
+    #             result['confidence'] = min(0.9, 0.5 + (service_score * 0.1))
+    #         elif purchase_score > 0:
+    #             result['primary_intent'] = 'product_search'  # Assume product search for purchase intent
+    #             result['confidence'] = min(0.8, 0.4 + (purchase_score * 0.1))
+    #         else:
+    #             # For short queries that might be product names, assume product search
+    #             if len(message_lower.split()) <= 3 and not any(word in message_lower for word in ['how', 'what', 'why', 'when', 'where', 'hello', 'hi']):
+    #                 result['primary_intent'] = 'product_search'
+    #                 result['confidence'] = 0.7
+            
+    #         # Extract entities
+    #         entities = []
+            
+    #         # Add product entities
+    #         for match in product_matches:
+    #             entities.append({
+    #                 'type': 'product',
+    #                 'value': match,
+    #                 'confidence': 0.9
+    #             })
+            
+    #         # Add purchase intent entities
+    #         for match in purchase_matches:
+    #             entities.append({
+    #                 'type': 'purchase_intent',
+    #                 'value': match,
+    #                 'confidence': 0.8
+    #             })
+            
+    #         result['entities'] = entities
+            
+    #         logger.info(f"Final intent result: {result}")
+    #         return result
+            
+    #     except Exception as e:
+    #         logger.error(f"Error extracting intent: {str(e)}")
+    #         return {
+    #             'primary_intent': 'product_search',  # Default to product search on error
+    #             'all_intents': [],
+    #             'confidence': 0.6,
+    #             'entities': []
+    #         }
     def extract_intent(self, message: str) -> Dict[str, Any]:
-        """
-        Extract intent from user message with improved product detection
-        """
-        try:
-            message_lower = message.lower().strip()
-            logger.info(f"Extracting intent from: '{message_lower}'")
-            
-            # Initialize result
-            result = {
-                'primary_intent': 'general_query',
-                'all_intents': [],
-                'confidence': 0.3,
-                'entities': []
-            }
-            
-            # Check for direct product matches
-            product_matches = [keyword for keyword in self.product_keywords if keyword in message_lower]
-            purchase_matches = [keyword for keyword in self.purchase_keywords if keyword in message_lower]
-            service_matches = [keyword for keyword in self.service_keywords if keyword in message_lower]
-            
-            # Calculate scores
-            product_score = len(product_matches) * 1.0
-            purchase_score = len(purchase_matches) * 0.8
-            service_score = len(service_matches) * 0.9
-            
-            # Special handling for specific product models like "iPhone 15"
-            if any(brand in message_lower for brand in ['iphone', 'samsung', 'macbook', 'ipad']):
-                product_score += 2.0  # Boost score for specific brand mentions
-            
-            # Check for model numbers or versions
-            import re
-            if re.search(r'\b\w+\s+\d+\b', message_lower):  # Pattern like "iPhone 15", "Galaxy S23"
-                product_score += 1.5
-            
-            logger.info(f"Intent scores - Product: {product_score} (matches: {product_matches}), Purchase: {purchase_score}, Service: {service_score}")
-            
-            # Determine primary intent
-            max_score = max(product_score, purchase_score, service_score)
-            
-            if product_score >= 1.0 or (product_score > 0 and purchase_score > 0):
-                result['primary_intent'] = 'product_search'
-                result['confidence'] = min(0.95, 0.6 + (product_score * 0.1))
-            elif service_score == max_score and service_score > 0:
-                result['primary_intent'] = 'service_request'
-                result['confidence'] = min(0.9, 0.5 + (service_score * 0.1))
-            elif purchase_score > 0:
-                result['primary_intent'] = 'product_search'  # Assume product search for purchase intent
-                result['confidence'] = min(0.8, 0.4 + (purchase_score * 0.1))
-            else:
-                # For short queries that might be product names, assume product search
-                if len(message_lower.split()) <= 3 and not any(word in message_lower for word in ['how', 'what', 'why', 'when', 'where', 'hello', 'hi']):
-                    result['primary_intent'] = 'product_search'
-                    result['confidence'] = 0.7
-            
-            # Extract entities
-            entities = []
-            
-            # Add product entities
-            for match in product_matches:
-                entities.append({
-                    'type': 'product',
-                    'value': match,
-                    'confidence': 0.9
-                })
-            
-            # Add purchase intent entities
-            for match in purchase_matches:
-                entities.append({
-                    'type': 'purchase_intent',
-                    'value': match,
-                    'confidence': 0.8
-                })
-            
-            result['entities'] = entities
-            
-            logger.info(f"Final intent result: {result}")
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error extracting intent: {str(e)}")
-            return {
-                'primary_intent': 'product_search',  # Default to product search on error
-                'all_intents': [],
-                'confidence': 0.6,
-                'entities': []
-            }
+        """Extract intent and entities from message"""
+        
+        # Convert message to lowercase for analysis
+        message_lower = message.lower()
+        
+        # Define intent patterns - EXPANDED FOR BETTER DETECTION
+        intent_patterns = {
+            'product_search': [
+                'buy', 'purchase', 'shop', 'store', 'product', 'item', 'sell', 
+                'price', 'cost', 'cheap', 'expensive', 'discount', 'deal', 
+                'samsung', 'iphone', 'laptop', 'phone', 'computer', 'tv',
+                'jumia', 'konga', 'amazon', 'ebay', 'online', 'order',
+                'looking for', 'need', 'want', 'find', 'search for',
+                'where to buy', 'how much', 'under', 'below', 'above'
+            ],
+            'service_request': [
+                'service', 'repair', 'fix', 'install', 'maintenance', 
+                'provider', 'contractor', 'professional', 'expert',
+                'plumber', 'electrician', 'mechanic', 'cleaner',
+                'delivery', 'transport', 'taxi', 'ride'
+            ],
+            'price_inquiry': [
+                'price', 'cost', 'how much', 'rate', 'fee', 'charge',
+                'expensive', 'cheap', 'affordable', 'budget',
+                '$', '₦', 'naira', 'dollar', 'under', 'below', 'above'
+            ],
+            'comparison': [
+                'compare', 'vs', 'versus', 'difference', 'better', 'best',
+                'which', 'between', 'or', 'alternative', 'similar'
+            ],
+            'greeting': ['hi', 'hello', 'hey', 'good morning', 'good afternoon'],
+            'goodbye': ['bye', 'goodbye', 'see you', 'thanks', 'thank you']
+        }
+        
+        # Analyze intent
+        intent_scores = {}
+        for intent, keywords in intent_patterns.items():
+            score = sum(1 for keyword in keywords if keyword in message_lower)
+            if score > 0:
+                intent_scores[intent] = score / len(keywords)  # Normalize by keyword count
+        
+        # Determine primary intent
+        if intent_scores:
+            primary_intent = max(intent_scores, key=intent_scores.get)
+            confidence = intent_scores[primary_intent]
+        else:
+            primary_intent = 'general_query'
+            confidence = 0.3
+        
+        # Extract entities (products, brands, etc.)
+        entities = []
+        
+        # Brand detection
+        brands = ['samsung', 'apple', 'iphone', 'nokia', 'hp', 'dell', 'lenovo', 'asus']
+        entities.extend([brand for brand in brands if brand in message_lower])
+        
+        # Product categories
+        categories = ['phone', 'laptop', 'computer', 'tv', 'tablet', 'watch', 'headphones']
+        entities.extend([cat for cat in categories if cat in message_lower])
+        
+        # Shopping platforms
+        platforms = ['jumia', 'konga', 'amazon', 'ebay', 'aliexpress']
+        entities.extend([platform for platform in platforms if platform in message_lower])
+        
+        # Price indicators
+        price_keywords = ['cheap', 'expensive', 'under', 'below', 'above', 'budget']
+        entities.extend([keyword for keyword in price_keywords if keyword in message_lower])
+        
+        return {
+            'original_message': message,  # IMPORTANT: Include original message
+            'primary_intent': primary_intent,
+            'confidence': confidence,
+            'intent_scores': intent_scores,
+            'entities': list(set(entities)),  # Remove duplicates
+            'message_length': len(message),
+            'has_price_mention': any(char in message for char in ['$', '₦']) or any(word in message_lower for word in ['price', 'cost', 'naira', 'dollar']),
+            'has_brand_mention': any(brand in message_lower for brand in brands),
+            'has_platform_mention': any(platform in message_lower for platform in platforms)
+        }
 class SearchHelper:
     """Helper functions for search operations"""
     

@@ -21,19 +21,20 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from django.views import View
 
 from .models import (
     ChatSession, ChatMessage, SearchQuery, SearchResult, 
     UserFeedback, ChatAnalytics, BotConfiguration
 )
 from .serializers import (
-    ChatSessionSerializer, ChatMessageSerializer, UserFeedbackSerializer
+    ChatSessionSerializer, ChatMessageSerializer, UserFeedbackSerializer,
+    ChatMessageRequestSerializer, ChatMessageResponseSerializer,
+    QuickSearchRequestSerializer, QuickSearchResponseSerializer,
+    FeedbackRequestSerializer, ChatAnalyticsSerializer,
+    BotConfigurationSerializer
 )
 from .services.smart_router import SmartChatbotRouter
-from .utils import ChatSessionManager
-from .utils import ChatAnalyticsManager
-from channels.db import database_sync_to_async
+from .utils import ChatSessionManager, ChatAnalyticsManager
 from asgiref.sync import sync_to_async
 
 logger = logging.getLogger(__name__)
@@ -69,9 +70,10 @@ class ChatInterfaceView(TemplateView):
             'pt': 'Portuguese'
         }
 
+
 @method_decorator(csrf_exempt, name='dispatch')
 class ChatAPIView(View):
-    """Chat API endpoint with proper async support"""
+    """Main chatbot API endpoint with async support"""
     
     def __init__(self):
         super().__init__()
@@ -83,7 +85,7 @@ class ChatAPIView(View):
         """Handle GET requests - return API info"""
         return JsonResponse({
             'success': True,
-            'message': 'Finda Chat API is running',
+            'message': 'AI Chatbot API is running',
             'endpoints': {
                 'chat': 'POST /chatbot/api/chat/ - Send chat messages',
                 'methods': ['POST'],
@@ -93,11 +95,11 @@ class ChatAPIView(View):
         })
     
     def post(self, request):
-        """Handle POST requests synchronously but run async operations with asyncio.run()"""
+        """Handle POST requests synchronously but run async operations"""
         try:
             # Parse request data
             if request.content_type == 'application/json':
-                data = json.loads(request.body)
+                data = json.loads(request.body.decode('utf-8'))
             else:
                 data = request.POST.dict()
             
@@ -110,20 +112,28 @@ class ChatAPIView(View):
             if not message_text and not file_data:
                 return JsonResponse({
                     'success': False,
-                    'error': 'Message text or file is required'
+                    'error': 'Message text or file is required',
+                    'response': 'Please provide a message.'
                 }, status=400)
+            
+            # Log the incoming request
+            logger.info(f"Processing chat request: '{message_text}' (type: {message_type})")
             
             # Run the async processing
             result = asyncio.run(self._process_chat_async(
                 request, message_text, message_type, session_id, file_data, data
             ))
             
+            # Log the result
+            logger.info(f"Chat processing complete. Response length: {len(result.get('response', ''))}")
+            
             return JsonResponse(result)
             
         except json.JSONDecodeError:
             return JsonResponse({
                 'success': False,
-                'error': 'Invalid JSON data'
+                'error': 'Invalid JSON data',
+                'response': 'Invalid request format.'
             }, status=400)
         
         except Exception as e:
@@ -131,71 +141,109 @@ class ChatAPIView(View):
             return JsonResponse({
                 'success': False,
                 'error': 'An error occurred while processing your message',
-                'message': 'I apologize, but I encountered an error. Please try again.',
+                'response': 'I apologize, but I encountered an error. Please try again.',
                 'timestamp': datetime.now().isoformat()
             }, status=500)
     
     async def _process_chat_async(self, request, message_text, message_type, session_id, file_data, data):
         """Process chat message asynchronously"""
-        # Get or create chat session
-        chat_session = await self._get_or_create_session(request, session_id)
-        
-        # Save user message
-        user_message = await self._save_user_message(
-            chat_session, message_text, message_type, file_data
-        )
-        
-        # Build context
-        context = await self._build_conversation_context(chat_session, request)
-        
-        # Process with router
-        processing_result = await self.router.process_message(
-            message_text, message_type, file_data, context
-        )
-        
-        # Save bot response
-        bot_message = await self._save_bot_response(
-            chat_session, processing_result, user_message
-        )
-        
-        # Update analytics
-        await self._update_analytics(processing_result, chat_session)
-        
-        # Prepare response data
-        response_data = {
-            'success': processing_result.get('success', True),
-            'message_id': str(bot_message.id),
-            'session_id': str(chat_session.id),
-            'response': processing_result.get('final_response', ''),
-            'message_type': 'text',
-            'metadata': {
-                'processing_time': processing_result.get('metadata', {}).get('processing_time', 0),
-                'search_strategy': processing_result.get('search_strategy', 'unknown'),
-                'confidence_score': processing_result.get('metadata', {}).get('confidence_score', 0),
-                'services_used': processing_result.get('metadata', {}).get('services_used', [])
-            },
-            'search_results': {
-                'local': {
-                    'products': processing_result.get('local_results', {}).get('products', [])[:5],
-                    'services': processing_result.get('local_results', {}).get('services', [])[:5],
-                    'total': processing_result.get('local_results', {}).get('total_results', 0)
-                },
-                'external': {
-                    'products': processing_result.get('external_results', {}).get('products', [])[:5],
-                    'total': processing_result.get('external_results', {}).get('total_found', 0)
-                }
-            },
-            'suggested_actions': await self._generate_suggested_actions(processing_result),
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        # Add TTS if requested
-        if data.get('enable_tts', False):
-            response_data['tts_audio'] = await self._generate_tts_response(
-                processing_result.get('final_response', '')
+        try:
+            # Get or create chat session
+            chat_session = await self._get_or_create_session(request, session_id)
+            
+            # Save user message
+            user_message = await self._save_user_message(
+                chat_session, message_text, message_type, file_data
             )
-        
-        return response_data
+            
+            # Build context
+            context = await self._build_conversation_context(chat_session, request)
+            
+            # Process with router
+            processing_result = await self.router.process_message(
+                message_text, context
+            )
+            
+            # DEBUG: Log the processing result structure
+            logger.info(f"DEBUG: Processing result keys: {list(processing_result.keys())}")
+            logger.info(f"DEBUG: Search results structure: {processing_result.get('search_results', 'NOT FOUND')}")
+            
+            # Save bot response
+            bot_message = await self._save_bot_response(
+                chat_session, processing_result, user_message
+            )
+            
+            # Update analytics
+            await self._update_analytics(processing_result, chat_session)
+            
+            # Get the final response
+            final_response_text = processing_result.get('response', processing_result.get('final_response', ''))
+            
+            # FIXED: Extract search results correctly based on SmartChatbotRouter structure
+            search_results = processing_result.get('search_results', {})
+            
+            # Handle both possible structures
+            if 'local' in search_results and 'external' in search_results:
+                # New structure from SmartChatbotRouter
+                local_results = search_results.get('local', {})
+                external_results = search_results.get('external', {})
+            else:
+                # Fallback to old structure
+                local_results = processing_result.get('local_results', {})
+                external_results = processing_result.get('external_results', {})
+            
+            # DEBUG: Log what we extracted
+            logger.info(f"DEBUG: Extracted local results: products={len(local_results.get('products', []))}, services={len(local_results.get('services', []))}")
+            logger.info(f"DEBUG: Extracted external results: products={len(external_results.get('products', []))}, services={len(external_results.get('services', []))}")
+            
+            # Prepare response data
+            response_data = {
+                'success': processing_result.get('success', True),
+                'message_id': str(bot_message.id),
+                'session_id': str(chat_session.session_id),
+                'response': final_response_text,
+                'message_type': 'text',
+                'metadata': {
+                    'processing_time': processing_result.get('processing_time', 0),
+                    'search_strategy': processing_result.get('search_strategy', 'unknown'),
+                    'confidence_score': processing_result.get('intent', {}).get('confidence', 0),
+                    'services_used': processing_result.get('metadata', {}).get('services_used', []),
+                    'has_external_results': len(external_results.get('services', [])) + len(external_results.get('products', [])) > 0
+                },
+                'search_results': {
+                    'local': {
+                        'products': local_results.get('products', [])[:5],
+                        'services': local_results.get('services', [])[:5],
+                        'total': local_results.get('total', local_results.get('total_results', 0))
+                    },
+                    'external': {
+                        'products': external_results.get('products', [])[:5],
+                        'services': external_results.get('services', [])[:5],
+                        'total': external_results.get('total', external_results.get('total_found', 0))
+                    }
+                },
+                'suggested_actions': await self._generate_suggested_actions(processing_result),
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            # DEBUG: Log final response structure
+            logger.info(f"DEBUG: Final response - external total: {response_data['search_results']['external']['total']}")
+            logger.info(f"DEBUG: Final response - external services count: {len(response_data['search_results']['external']['services'])}")
+            
+            # Add TTS if requested
+            if data.get('enable_tts', False):
+                response_data['tts_audio'] = await self._generate_tts_response(final_response_text)
+            
+            return response_data
+            
+        except Exception as e:
+            logger.error(f"Error in async processing: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e),
+                'response': 'I apologize, but I encountered an error while processing your request.',
+                'timestamp': datetime.now().isoformat()
+            }
 
     @sync_to_async
     def _get_or_create_session(self, request, session_id):
@@ -203,7 +251,7 @@ class ChatAPIView(View):
         if session_id:
             try:
                 session = ChatSession.objects.select_related('user').get(
-                    id=session_id,
+                    session_id=session_id,
                     status='active'
                 )
                 session.last_activity = datetime.now()
@@ -246,22 +294,29 @@ class ChatAPIView(View):
     @sync_to_async
     def _save_bot_response(self, session, processing_result, user_message):
         """Save bot response to database"""
-        # Handle search data saving synchronously within this transaction
-        if processing_result.get('local_results') or processing_result.get('external_results'):
+        # Handle search data saving
+        if processing_result.get('search_results') or processing_result.get('local_results') or processing_result.get('external_results'):
             self._save_search_data_sync(processing_result, user_message)
+        
+        # Extract search results for counting
+        search_results = processing_result.get('search_results', {})
+        local_results = search_results.get('local', processing_result.get('local_results', {}))
+        external_results = search_results.get('external', processing_result.get('external_results', {}))
+        
+        total_results = (
+            local_results.get('total', local_results.get('total_results', 0)) +
+            external_results.get('total', external_results.get('total_found', 0))
+        )
         
         bot_message_data = {
             'chat_session': session,
             'sender_type': 'bot',
             'message_type': 'text',
-            'content': processing_result.get('final_response', ''),
+            'content': processing_result.get('response', processing_result.get('final_response', '')),
             'search_mode': processing_result.get('search_strategy', 'unknown'),
-            'response_time': processing_result.get('metadata', {}).get('processing_time', 0),
-            'confidence_score': processing_result.get('metadata', {}).get('confidence_score', 0),
-            'search_results_count': (
-                processing_result.get('local_results', {}).get('total_results', 0) +
-                processing_result.get('external_results', {}).get('total_found', 0)
-            ),
+            'response_time': processing_result.get('processing_time', 0),
+            'confidence_score': processing_result.get('intent', {}).get('confidence', 0),
+            'search_results_count': total_results,
             'context_data': {
                 'intent': processing_result.get('intent', {}),
                 'search_strategy': processing_result.get('search_strategy'),
@@ -274,14 +329,14 @@ class ChatAPIView(View):
     async def _build_conversation_context(self, session, request):
         """Build conversation context"""
         context = {
-            'session_id': str(session.id),
+            'session_id': str(session.session_id),
             'user_preferences': session.user_preferences,
             'location_context': session.location_context or self._extract_location_context(request),
             'conversation_history': [],
             'recent_searches': []
         }
         
-        # Get recent data concurrently
+        # Get recent data
         recent_messages, recent_searches = await asyncio.gather(
             self._get_recent_messages(session, 10),
             self._get_recent_searches(session, 5)
@@ -329,6 +384,11 @@ class ChatAPIView(View):
             search_strategy = processing_result.get('search_strategy', 'unknown')
             intent = processing_result.get('intent', {})
             
+            # Extract search results
+            search_results = processing_result.get('search_results', {})
+            local_results = search_results.get('local', processing_result.get('local_results', {}))
+            external_results = search_results.get('external', processing_result.get('external_results', {}))
+            
             search_query_data = {
                 'chat_message': user_message,
                 'query_text': user_message.content,
@@ -336,13 +396,13 @@ class ChatAPIView(View):
                 'source_used': search_strategy,
                 'filters': intent.get('filters', {}),
                 'location_context': processing_result.get('location_context', {}),
-                'local_results_count': processing_result.get('local_results', {}).get('total_results', 0),
-                'external_results_count': processing_result.get('external_results', {}).get('total_found', 0),
+                'local_results_count': local_results.get('total', local_results.get('total_results', 0)),
+                'external_results_count': external_results.get('total', external_results.get('total_found', 0)),
                 'total_results_shown': (
-                    processing_result.get('local_results', {}).get('total_results', 0) +
-                    processing_result.get('external_results', {}).get('total_found', 0)
+                    local_results.get('total', local_results.get('total_results', 0)) +
+                    external_results.get('total', external_results.get('total_found', 0))
                 ),
-                'search_duration': processing_result.get('metadata', {}).get('processing_time', 0)
+                'search_duration': processing_result.get('processing_time', 0)
             }
             
             search_query = SearchQuery.objects.create(**search_query_data)
@@ -356,8 +416,12 @@ class ChatAPIView(View):
         try:
             results_to_create = []
             
+            # Extract search results
+            search_results = processing_result.get('search_results', {})
+            local_results = search_results.get('local', processing_result.get('local_results', {}))
+            external_results = search_results.get('external', processing_result.get('external_results', {}))
+            
             # Process local results
-            local_results = processing_result.get('local_results', {})
             for result_type in ['products', 'services']:
                 results = local_results.get(result_type, [])
                 for i, result in enumerate(results[:10]):
@@ -381,23 +445,24 @@ class ChatAPIView(View):
                     ))
             
             # Process external results
-            external_results = processing_result.get('external_results', {})
-            for i, result in enumerate(external_results.get('products', [])[:10]):
-                results_to_create.append(SearchResult(
-                    search_query=search_query,
-                    result_type='external_product',
-                    title=result.get('title', 'Unknown'),
-                    description=result.get('description', ''),
-                    url=result.get('url', ''),
-                    image_url=result.get('image_url', ''),
-                    external_data=result,
-                    price_info={
-                        'price_text': result.get('price', ''),
-                        'source': result.get('source', '')
-                    },
-                    relevance_score=result.get('confidence', 0.5),
-                    position=i + 1 + len(local_results.get('products', []))
-                ))
+            for result_type in ['products', 'services']:
+                results = external_results.get(result_type, [])
+                for i, result in enumerate(results[:10]):
+                    results_to_create.append(SearchResult(
+                        search_query=search_query,
+                        result_type=f'external_{result_type[:-1]}',
+                        title=result.get('title', result.get('name', 'Unknown')),
+                        description=result.get('description', ''),
+                        url=result.get('url', ''),
+                        image_url=result.get('image_url', result.get('image', '')),
+                        external_data=result,
+                        price_info={
+                            'price_text': result.get('price', ''),
+                            'source': result.get('source', '')
+                        },
+                        relevance_score=result.get('confidence', result.get('relevance_score', 0.5)),
+                        position=i + 1 + len(local_results.get(result_type, []))
+                    ))
             
             if results_to_create:
                 SearchResult.objects.bulk_create(results_to_create, ignore_conflicts=True)
@@ -408,13 +473,17 @@ class ChatAPIView(View):
     async def _update_analytics(self, processing_result, chat_session):
         """Update analytics"""
         try:
+            search_results = processing_result.get('search_results', {})
+            local_results = search_results.get('local', processing_result.get('local_results', {}))
+            external_results = search_results.get('external', processing_result.get('external_results', {}))
+            
             analytics_data = {
-                'session_id': str(chat_session.id),
-                'response_time': processing_result.get('metadata', {}).get('processing_time', 0),
+                'session_id': str(chat_session.session_id),
+                'response_time': processing_result.get('processing_time', 0),
                 'search_strategy': processing_result.get('search_strategy', 'unknown'),
                 'results_count': (
-                    processing_result.get('local_results', {}).get('total_results', 0) +
-                    processing_result.get('external_results', {}).get('total_found', 0)
+                    local_results.get('total', local_results.get('total_results', 0)) +
+                    external_results.get('total', external_results.get('total_found', 0))
                 ),
                 'success': processing_result.get('success', True)
             }
@@ -427,8 +496,10 @@ class ChatAPIView(View):
     async def _generate_suggested_actions(self, processing_result):
         """Generate suggested actions"""
         suggestions = []
-        local_results = processing_result.get('local_results', {})
-        external_results = processing_result.get('external_results', {})
+        
+        search_results = processing_result.get('search_results', {})
+        local_results = search_results.get('local', processing_result.get('local_results', {}))
+        external_results = search_results.get('external', processing_result.get('external_results', {}))
         
         if local_results.get('products') or external_results.get('products'):
             suggestions.extend([
@@ -437,7 +508,7 @@ class ChatAPIView(View):
                 {'action': 'similar_products', 'label': 'Find similar products', 'description': 'Search alternatives'}
             ])
         
-        if local_results.get('services'):
+        if local_results.get('services') or external_results.get('services'):
             suggestions.extend([
                 {'action': 'contact_provider', 'label': 'Contact service provider', 'description': 'Get in touch directly'},
                 {'action': 'check_availability', 'label': 'Check availability', 'description': 'Verify service availability'}
@@ -484,509 +555,27 @@ class ChatAPIView(View):
             'timezone': 'Africa/Lagos',
             'currency': 'NGN'
         }
-      
-# @method_decorator(csrf_exempt, name='dispatch')
-# class ChatAPIView(APIView):
-#     """Main API endpoint for chat interactions"""
-#     permission_classes = [AllowAny]
-    
-#     def __init__(self):
-#         super().__init__()
-#         self.router = SmartChatbotRouter()
-#         self.session_manager = ChatSessionManager()
-#         self.analytics = ChatAnalyticsManager()
-    
-#     async def post(self, request):
-#         """Handle chat messages"""
-#         try:
-#             # Parse request data
-#             data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
-            
-#             message_text = data.get('message', '').strip()
-#             message_type = data.get('message_type', 'text')
-#             session_id = data.get('session_id')
-#             file_data = request.FILES.get('file') if message_type in ['image', 'voice'] else None
-            
-#             # Validate input
-#             if not message_text and not file_data:
-#                 return JsonResponse({
-#                     'success': False,
-#                     'error': 'Message text or file is required'
-#                 }, status=400)
-            
-#             # Get or create chat session
-#             chat_session = await self._get_or_create_session(request, session_id)
-            
-#             # Save user message to database
-#             user_message = await self._save_user_message(
-#                 chat_session, message_text, message_type, file_data
-#             )
-            
-#             # Get conversation context
-#             context = await self._build_conversation_context(chat_session, request)
-            
-#             # Process message with the router
-#             processing_result = await self.router.process_message(
-#                 message_text, message_type, file_data, context
-#             )
-            
-#             # Save bot response to database
-#             bot_message = await self._save_bot_response(
-#                 chat_session, processing_result, user_message
-#             )
-            
-#             # Update analytics
-#             await self._update_analytics(processing_result, chat_session)
-            
-#             # Prepare response
-#             response_data = {
-#                 'success': processing_result.get('success', True),
-#                 'message_id': str(bot_message.id),
-#                 'session_id': str(chat_session.id),
-#                 'response': processing_result.get('final_response', ''),
-#                 'message_type': 'text',
-#                 'metadata': {
-#                     'processing_time': processing_result.get('metadata', {}).get('processing_time', 0),
-#                     'search_strategy': processing_result.get('search_strategy', 'unknown'),
-#                     'confidence_score': processing_result.get('metadata', {}).get('confidence_score', 0),
-#                     'services_used': processing_result.get('metadata', {}).get('services_used', [])
-#                 },
-#                 'search_results': {
-#                     'local': {
-#                         'products': processing_result.get('local_results', {}).get('products', [])[:5],
-#                         'services': processing_result.get('local_results', {}).get('services', [])[:5],
-#                         'total': processing_result.get('local_results', {}).get('total_results', 0)
-#                     },
-#                     'external': {
-#                         'products': processing_result.get('external_results', {}).get('products', [])[:5],
-#                         'total': processing_result.get('external_results', {}).get('total_found', 0)
-#                     }
-#                 },
-#                 'suggested_actions': await self._generate_suggested_actions(processing_result),
-#                 'timestamp': datetime.now().isoformat()
-#             }
-            
-#             # Add TTS audio if requested
-#             if data.get('enable_tts', False):
-#                 response_data['tts_audio'] = await self._generate_tts_response(
-#                     processing_result.get('final_response', '')
-#                 )
-            
-#             return JsonResponse(response_data)
-            
-#         except json.JSONDecodeError:
-#             return JsonResponse({
-#                 'success': False,
-#                 'error': 'Invalid JSON data'
-#             }, status=400)
-        
-#         except Exception as e:
-#             logger.error(f"Error processing chat message: {str(e)}")
-#             return JsonResponse({
-#                 'success': False,
-#                 'error': 'An error occurred while processing your message',
-#                 'message': 'I apologize, but I encountered an error. Please try again.',
-#                 'timestamp': datetime.now().isoformat()
-#             }, status=500)
-    
-#     async def _get_or_create_session(self, request, session_id: Optional[str]) -> ChatSession:
-#         """Get existing session or create new one"""
-#         if session_id:
-#             try:
-#                 session = await ChatSession.objects.select_related('user').aget(
-#                     id=session_id,
-#                     status='active'
-#                 )
-#                 # Update last activity
-#                 session.last_activity = datetime.now()
-#                 await session.asave()
-#                 return session
-#             except ChatSession.DoesNotExist:
-#                 pass
-        
-#         # Create new session
-#         session_data = {
-#             'session_id': self.session_manager.generate_session_id(),
-#             'ip_address': self._get_client_ip(request),
-#             'user_agent': request.META.get('HTTP_USER_AGENT', '')[:500],
-#             'device_info': self._extract_device_info(request)
-#         }
-        
-#         if request.user.is_authenticated:
-#             session_data['user'] = request.user
-        
-#         return await ChatSession.objects.acreate(**session_data)
-    
-#     async def _save_user_message(
-#         self, 
-#         session: ChatSession, 
-#         message: str, 
-#         message_type: str,
-#         file_data: Any = None
-#     ) -> ChatMessage:
-#         """Save user message to database"""
-#         message_data = {
-#             'chat_session': session,
-#             'sender_type': 'user',
-#             'message_type': message_type,
-#             'content': message,
-#             'context_data': {}
-#         }
-        
-#         # Handle file uploads
-#         if file_data and message_type == 'image':
-#             # Upload image to Cloudinary (this will be handled by multimodal service)
-#             message_data['image'] = file_data
-#         elif file_data and message_type == 'voice':
-#             message_data['voice_file'] = file_data
-        
-#         return await ChatMessage.objects.acreate(**message_data)
-    
-#     async def _save_bot_response(
-#         self,
-#         session: ChatSession,
-#         processing_result: Dict,
-#         user_message: ChatMessage
-#     ) -> ChatMessage:
-#         """Save bot response to database"""
-        
-#         # Create search queries and results if applicable
-#         if processing_result.get('local_results') or processing_result.get('external_results'):
-#             await self._save_search_data(processing_result, user_message)
-        
-#         # Save bot message
-#         bot_message_data = {
-#             'chat_session': session,
-#             'sender_type': 'bot',
-#             'message_type': 'text',
-#             'content': processing_result.get('final_response', ''),
-#             'search_mode': processing_result.get('search_strategy', 'unknown'),
-#             'response_time': processing_result.get('metadata', {}).get('processing_time', 0),
-#             'confidence_score': processing_result.get('metadata', {}).get('confidence_score', 0),
-#             'search_results_count': (
-#                 processing_result.get('local_results', {}).get('total_results', 0) +
-#                 processing_result.get('external_results', {}).get('total_found', 0)
-#             ),
-#             'context_data': {
-#                 'intent': processing_result.get('intent', {}),
-#                 'search_strategy': processing_result.get('search_strategy'),
-#                 'services_used': processing_result.get('metadata', {}).get('services_used', [])
-#             }
-#         }
-        
-#         return await ChatMessage.objects.acreate(**bot_message_data)
-    
-#     async def _build_conversation_context(self, session: ChatSession, request) -> Dict:
-#         """Build conversation context for the AI"""
-#         context = {
-#             'session_id': str(session.id),
-#             'user_preferences': session.user_preferences,
-#             'location_context': session.location_context or self._extract_location_context(request),
-#             'conversation_history': [],
-#             'recent_searches': []
-#         }
-        
-#         # Get recent conversation history
-#         recent_messages = await self._get_recent_messages(session, limit=10)
-#         context['conversation_history'] = [
-#             {
-#                 'sender_type': msg.sender_type,
-#                 'content': msg.content,
-#                 'timestamp': msg.created_at.isoformat(),
-#                 'message_type': msg.message_type
-#             }
-#             for msg in recent_messages
-#         ]
-        
-#         # Get recent search queries
-#         recent_searches = await self._get_recent_searches(session, limit=5)
-#         context['recent_searches'] = [
-#             {
-#                 'query': search.query_text,
-#                 'search_type': search.search_type,
-#                 'results_count': search.total_results_shown,
-#                 'timestamp': search.created_at.isoformat()
-#             }
-#             for search in recent_searches
-#         ]
-        
-#         return context
-    
-#     @database_sync_to_async
-#     def _get_recent_messages(self, session: ChatSession, limit: int = 10):
-#         """Get recent messages from session"""
-#         return list(session.messages.filter(
-#             is_active=True
-#         ).order_by('-created_at')[:limit])
-    
-#     @database_sync_to_async
-#     def _get_recent_searches(self, session: ChatSession, limit: int = 5):
-#         """Get recent search queries from session"""
-#         return list(SearchQuery.objects.filter(
-#             chat_message__chat_session=session
-#         ).order_by('-created_at')[:limit])
-    
-#     async def _save_search_data(self, processing_result: Dict, user_message: ChatMessage):
-#         """Save search data to database"""
-#         try:
-#             # Extract search information
-#             search_strategy = processing_result.get('search_strategy', 'unknown')
-#             intent = processing_result.get('intent', {})
-            
-#             # Create search query record
-#             search_query_data = {
-#                 'chat_message': user_message,
-#                 'query_text': user_message.content,
-#                 'search_type': intent.get('search_type', 'general'),
-#                 'source_used': search_strategy,
-#                 'filters': intent.get('filters', {}),
-#                 'location_context': processing_result.get('location_context', {}),
-#                 'local_results_count': processing_result.get('local_results', {}).get('total_results', 0),
-#                 'external_results_count': processing_result.get('external_results', {}).get('total_found', 0),
-#                 'total_results_shown': (
-#                     processing_result.get('local_results', {}).get('total_results', 0) +
-#                     processing_result.get('external_results', {}).get('total_found', 0)
-#                 ),
-#                 'search_duration': processing_result.get('metadata', {}).get('processing_time', 0)
-#             }
-            
-#             search_query = await self._create_search_query(search_query_data)
-            
-#             # Save search results
-#             await self._save_search_results(search_query, processing_result)
-            
-#         except Exception as e:
-#             logger.error(f"Error saving search data: {str(e)}")
-    
-#     @database_sync_to_async
-#     def _create_search_query(self, search_data: Dict) -> SearchQuery:
-#         """Create search query record"""
-#         return SearchQuery.objects.create(**search_data)
-    
-#     async def _save_search_results(self, search_query: SearchQuery, processing_result: Dict):
-#         """Save individual search results"""
-#         try:
-#             results_to_create = []
-            
-#             # Process local results
-#             local_results = processing_result.get('local_results', {})
-#             for result_type in ['products', 'services']:
-#                 results = local_results.get(result_type, [])
-#                 for i, result in enumerate(results[:10]):  # Limit to top 10
-#                     results_to_create.append({
-#                         'search_query': search_query,
-#                         'result_type': result_type[:-1],  # 'product' or 'service'
-#                         'title': result.get('name', 'Unknown'),
-#                         'description': result.get('description', ''),
-#                         'url': result.get('url', ''),
-#                         'image_url': result.get('image', ''),
-#                         'object_id': result.get('id'),
-#                         'external_data': result,
-#                         'price_info': {
-#                             'price': result.get('price', 0),
-#                             'currency': result.get('currency', 'NGN'),
-#                             'formatted': result.get('formatted_price', '')
-#                         },
-#                         'location_info': result.get('location', {}),
-#                         'relevance_score': result.get('relevance_score', 0.5),
-#                         'position': i + 1
-#                     })
-            
-#             # Process external results
-#             external_results = processing_result.get('external_results', {})
-#             external_products = external_results.get('products', [])
-#             for i, result in enumerate(external_products[:10]):
-#                 results_to_create.append({
-#                     'search_query': search_query,
-#                     'result_type': 'external_product',
-#                     'title': result.get('title', 'Unknown'),
-#                     'description': result.get('description', ''),
-#                     'url': result.get('url', ''),
-#                     'image_url': result.get('image_url', ''),
-#                     'external_data': result,
-#                     'price_info': {
-#                         'price_text': result.get('price', ''),
-#                         'source': result.get('source', '')
-#                     },
-#                     'relevance_score': result.get('confidence', 0.5),
-#                     'position': i + 1 + len(local_results.get('products', []))
-#                 })
-            
-#             # Bulk create results
-#             if results_to_create:
-#                 await self._bulk_create_search_results(results_to_create)
-            
-#         except Exception as e:
-#             logger.error(f"Error saving search results: {str(e)}")
-    
-#     @database_sync_to_async
-#     def _bulk_create_search_results(self, results_data: List[Dict]):
-#         """Bulk create search results"""
-#         results = [SearchResult(**data) for data in results_data]
-#         SearchResult.objects.bulk_create(results, ignore_conflicts=True)
-    
-#     async def _update_analytics(self, processing_result: Dict, chat_session: ChatSession):
-#         """Update analytics with the interaction"""
-#         try:
-#             from .utils import ChatAnalyticsManager
-#             analytics = ChatAnalyticsManager()
-            
-#             analytics_data = {
-#                 'session_id': str(chat_session.id),
-#                 'response_time': processing_result.get('metadata', {}).get('processing_time', 0),
-#                 'search_strategy': processing_result.get('search_strategy', 'unknown'),
-#                 'results_count': (
-#                     processing_result.get('local_results', {}).get('total_results', 0) +
-#                     processing_result.get('external_results', {}).get('total_found', 0)
-#                 ),
-#                 'success': processing_result.get('success', True)
-#             }
-            
-#             await analytics.record_interaction(analytics_data)
-            
-#         except Exception as e:
-#             logger.error(f"Error updating analytics: {str(e)}")
-    
-#     async def _generate_suggested_actions(self, processing_result: Dict) -> List[Dict]:
-#         """Generate suggested actions based on processing result"""
-#         suggestions = []
-        
-#         # Get search results
-#         local_results = processing_result.get('local_results', {})
-#         external_results = processing_result.get('external_results', {})
-        
-#         # If products found, suggest related actions
-#         if local_results.get('products') or external_results.get('products'):
-#             suggestions.extend([
-#                 {
-#                     'action': 'compare_products',
-#                     'label': 'Compare these products',
-#                     'description': 'Get a detailed comparison of the products found'
-#                 },
-#                 {
-#                     'action': 'filter_results',
-#                     'label': 'Filter results',
-#                     'description': 'Narrow down results by price, location, or other criteria'
-#                 },
-#                 {
-#                     'action': 'similar_products',
-#                     'label': 'Find similar products',
-#                     'description': 'Search for alternative or related products'
-#                 }
-#             ])
-        
-#         # If services found
-#         if local_results.get('services'):
-#             suggestions.extend([
-#                 {
-#                     'action': 'contact_provider',
-#                     'label': 'Contact service provider',
-#                     'description': 'Get in touch with the service provider directly'
-#                 },
-#                 {
-#                     'action': 'check_availability',
-#                     'label': 'Check availability',
-#                     'description': 'Verify service availability in your area'
-#                 }
-#             ])
-        
-#         # General suggestions
-#         suggestions.extend([
-#             {
-#                 'action': 'new_search',
-#                 'label': 'Search for something else',
-#                 'description': 'Start a new search query'
-#             },
-#             {
-#                 'action': 'get_recommendations',
-#                 'label': 'Get recommendations',
-#                 'description': 'Get personalized product recommendations'
-#             }
-#         ])
-        
-#         return suggestions[:5]  # Limit to 5 suggestions
-    
-#     async def _generate_tts_response(self, text: str) -> Dict[str, Any]:
-#         """Generate text-to-speech audio (placeholder)"""
-#         # This is a placeholder - implement with your preferred TTS service
-#         return {
-#             'audio_url': None,
-#             'duration': 0,
-#             'format': 'mp3',
-#             'message': 'TTS not implemented yet'
-#         }
-    
-#     def _get_client_ip(self, request):
-#         """Get client IP address from request"""
-#         x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-#         if x_forwarded_for:
-#             return x_forwarded_for.split(',')[0].strip()
-#         return request.META.get('REMOTE_ADDR', 'Unknown')
-    
-#     def _extract_device_info(self, request) -> Dict[str, Any]:
-#         """Extract device information from request"""
-#         user_agent = request.META.get('HTTP_USER_AGENT', '')
-        
-#         device_info = {
-#             'user_agent': user_agent[:500],
-#             'is_mobile': 'Mobile' in user_agent or 'Android' in user_agent or 'iPhone' in user_agent,
-#             'browser': 'Unknown',
-#             'os': 'Unknown'
-#         }
-        
-#         # Simple browser detection
-#         if 'Chrome' in user_agent:
-#             device_info['browser'] = 'Chrome'
-#         elif 'Firefox' in user_agent:
-#             device_info['browser'] = 'Firefox'
-#         elif 'Safari' in user_agent:
-#             device_info['browser'] = 'Safari'
-#         elif 'Edge' in user_agent:
-#             device_info['browser'] = 'Edge'
-        
-#         # Simple OS detection
-#         if 'Windows' in user_agent:
-#             device_info['os'] = 'Windows'
-#         elif 'Mac' in user_agent:
-#             device_info['os'] = 'macOS'
-#         elif 'Linux' in user_agent:
-#             device_info['os'] = 'Linux'
-#         elif 'Android' in user_agent:
-#             device_info['os'] = 'Android'
-#         elif 'iOS' in user_agent:
-#             device_info['os'] = 'iOS'
-        
-#         return device_info
-    
-#     def _extract_location_context(self, request) -> Dict[str, Any]:
-#         """Extract location context from request"""
-#         # This is a basic implementation - you might want to use a geolocation service
-#         return {
-#             'ip_address': self._get_client_ip(request),
-#             'country': 'Nigeria',  # Default - implement proper geolocation
-#             'timezone': 'Africa/Lagos',
-#             'currency': 'NGN'
-#         }
 
+# Function-based wrapper for backwards compatibility
+@csrf_exempt
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def chat_api(request):
+    """
+    Function-based view wrapper for the chatbot API
+    """
+    view = ChatAPIView()
+    return view.post(request)
+    return view.post(request)
 
-# Additional API view functions that were incomplete:
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-async def quick_search_view(request):
+def quick_search(request):
     """Quick search API endpoint"""
     try:
-        data = request.data
-        query = data.get('query', '').strip()
-        
-        if not query:
-            return Response({
-                'success': False,
-                'error': 'Search query is required'
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
         # Validate request
-        serializer = QuickSearchRequestSerializer(data=data)
+        serializer = ChatMessageRequestSerializer(data=request.data)
         if not serializer.is_valid():
             return Response({
                 'success': False,
@@ -994,36 +583,91 @@ async def quick_search_view(request):
                 'details': serializer.errors
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Perform quick search
-        from .services.local_search import LocalSearchService
-        local_search = LocalSearchService()
+        data = serializer.validated_data
+        query = data.get('message', '').strip()
         
-        search_result = await local_search.quick_search(
-            query=query,
-            category=data.get('category'),
-            location=data.get('location'),
-            price_range=data.get('price_range'),
-            search_type=data.get('search_type', 'both')
-        )
+        if not query:
+            return Response({
+                'success': False,
+                'error': 'Search query is required'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
-        response_serializer = QuickSearchResponseSerializer({
-            'success': search_result['success'],
+        # Use the smart router for quick search
+        router = SmartChatbotRouter()
+        
+        # Build minimal context
+        context = {
+            'user_id': request.user.id if request.user.is_authenticated else None,
+            'session_id': data.get('session_id'),
+            'language': data.get('language', 'en'),
+            'location_context': data.get('user_location', {}),
+            'request_ip': request.META.get('REMOTE_ADDR', ''),
+            'user_agent': request.META.get('HTTP_USER_AGENT', ''),
+        }
+        
+        # Run async operation
+        result = asyncio.run(router.process_message(query, context))
+        
+        # Extract search results correctly
+        search_results = result.get('search_results', {})
+        local_results = search_results.get('local', result.get('local_results', {}))
+        external_results = search_results.get('external', result.get('external_results', {}))
+        
+        return Response({
+            'success': result.get('success', True),
             'query': query,
-            'results': search_result.get('results', {}),
-            'search_time': search_result.get('search_time', 0),
-            'error': search_result.get('error')
+            'response': result.get('response', result.get('final_response', '')),
+            'results_count': {
+                'local': local_results.get('total', local_results.get('total_results', 0)),
+                'external': external_results.get('total', external_results.get('total_found', 0))
+            },
+            'processing_time': result.get('processing_time', 0)
         })
-        
-        return Response(response_serializer.data)
         
     except Exception as e:
         logger.error(f"Error in quick search: {str(e)}")
         return Response({
             'success': False,
-            'error': 'Search failed',
-            'query': data.get('query', ''),
-            'search_time': 0
+            'error': str(e),
+            'query': request.data.get('message', ''),
+            'processing_time': 0
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check(request):
+    """Health check endpoint"""
+    try:
+        # Check database connection
+        from django.db import connection
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        
+        # Check cache
+        cache.set('health_check', 'ok', 60)
+        cache_status = cache.get('health_check') == 'ok'
+        
+        health_data = {
+            'status': 'healthy',
+            'service': 'AI Chatbot',
+            'timestamp': datetime.now().isoformat(),
+            'version': '1.0.0',
+            'services': {
+                'database': 'ok',
+                'cache': 'ok' if cache_status else 'error',
+                'local_search': 'ok',
+                'web_search': 'ok'
+            }
+        }
+        
+        return Response(health_data)
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        return Response({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }, status=500)
 
 
 @api_view(['GET'])
@@ -1032,9 +676,9 @@ def conversation_history_api_view(request, session_id):
     """Get conversation history for a session"""
     try:
         # Get session
-        session = get_object_or_404(ChatSession, id=session_id)
+        session = get_object_or_404(ChatSession, session_id=session_id)
         
-        # Check permissions (user can only access their own sessions)
+        # Check permissions
         if session.user and session.user != request.user:
             return Response({
                 'success': False,
@@ -1160,14 +804,17 @@ def chatbot_status_view(request):
         })
         
         # Get configuration info (non-sensitive)
-        public_config = BotConfiguration.objects.filter(
-            key__in=['max_file_size_mb', 'supported_languages', 'features_enabled'],
-            is_active=True
-        ).values('key', 'value')
-        
-        status_info['configuration'] = {
-            config['key']: config['value'] for config in public_config
-        }
+        try:
+            public_config = BotConfiguration.objects.filter(
+                key__in=['max_file_size_mb', 'supported_languages', 'features_enabled'],
+                is_active=True
+            ).values('key', 'value')
+            
+            status_info['configuration'] = {
+                config['key']: config['value'] for config in public_config
+            }
+        except:
+            status_info['configuration'] = {}
         
         return Response(status_info)
         
@@ -1180,58 +827,7 @@ def chatbot_status_view(request):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@login_required
-def admin_analytics_view(request):
-    """Admin analytics dashboard view"""
-    if not request.user.is_staff:
-        return render(request, 'ai_chatbot/access_denied.html')
-    
-    try:
-        # Get analytics data for the last 30 days
-        analytics = ChatAnalytics.objects.all()[:30]
-        
-        # Get summary statistics
-        total_sessions = sum(a.total_sessions for a in analytics)
-        total_messages = sum(a.total_messages for a in analytics)
-        avg_rating = sum(a.average_rating for a in analytics) / len(analytics) if analytics else 0
-        
-        context = {
-            'analytics': analytics,
-            'summary': {
-                'total_sessions': total_sessions,
-                'total_messages': total_messages,
-                'average_rating': round(avg_rating, 1),
-                'days_analyzed': len(analytics)
-            },
-            'chart_data': {
-                'dates': [a.date.strftime('%Y-%m-%d') for a in reversed(analytics)],
-                'sessions': [a.total_sessions for a in reversed(analytics)],
-                'messages': [a.total_messages for a in reversed(analytics)],
-                'ratings': [a.average_rating for a in reversed(analytics)]
-            }
-        }
-        
-        return render(request, 'ai_chatbot/admin_analytics.html', context)
-        
-    except Exception as e:
-        logger.error(f"Error in admin analytics view: {str(e)}")
-        return render(request, 'ai_chatbot/error.html', {'error': str(e)})
-                
-
-
-
-
-
-
-
-
-
-
-
-
-# Add these additional views to views.py
-
-# Additional API Views that need to be added to views.py:
+# Additional API Views
 
 class ImageUploadView(APIView):
     """Handle image upload for analysis"""
@@ -1253,7 +849,7 @@ class ImageUploadView(APIView):
             from .serializers import validate_image_file
             try:
                 validate_image_file(image_file)
-            except serializers.ValidationError as e:
+            except Exception as e:
                 return Response({
                     'success': False,
                     'error': str(e)
@@ -1301,7 +897,7 @@ class VoiceUploadView(APIView):
             from .serializers import validate_audio_file
             try:
                 validate_audio_file(voice_file)
-            except serializers.ValidationError as e:
+            except Exception as e:
                 return Response({
                     'success': False,
                     'error': str(e)
@@ -1346,30 +942,39 @@ class SearchSuggestionsView(APIView):
                 local_search = LocalSearchService()
                 
                 # Get popular searches
-                popular_searches = local_search.get_popular_searches(limit)
+                try:
+                    popular_searches = local_search.get_popular_searches(limit)
+                    
+                    # Filter suggestions that match the query
+                    for search in popular_searches:
+                        if query.lower() in search['term'].lower():
+                            suggestions.append({
+                                'text': search['term'],
+                                'type': 'popular',
+                                'count': search['count']
+                            })
+                except Exception as e:
+                    logger.warning(f"Could not get popular searches: {str(e)}")
                 
-                # Filter suggestions that match the query
-                for search in popular_searches:
-                    if query.lower() in search['term'].lower():
+                # Get category suggestions (if available)
+                try:
+                    from main.models import Category  # Adjust import path as needed
+                    categories = Category.objects.filter(
+                        name__icontains=query,
+                        is_active=True
+                    )[:5]
+                    
+                    for category in categories:
                         suggestions.append({
-                            'text': search['term'],
-                            'type': 'popular',
-                            'count': search['count']
+                            'text': category.name,
+                            'type': 'category',
+                            'description': f"Browse {category.name} category"
                         })
-                
-                # Get category suggestions
-                from main.models import Category  # Adjust import path
-                categories = Category.objects.filter(
-                    name__icontains=query,
-                    is_active=True
-                )[:5]
-                
-                for category in categories:
-                    suggestions.append({
-                        'text': category.name,
-                        'type': 'category',
-                        'description': f"Browse {category.name} category"
-                    })
+                except ImportError:
+                    # Category model not available
+                    pass
+                except Exception as e:
+                    logger.warning(f"Could not get categories: {str(e)}")
             
             return Response({
                 'success': True,
@@ -1571,50 +1176,39 @@ class AdminSessionsView(APIView):
             }, status=500)
 
 
-@api_view(['GET'])
-@permission_classes([AllowAny])
-def health_check_view(request):
-    """Health check endpoint"""
+@login_required
+def admin_analytics_view(request):
+    """Admin analytics dashboard view"""
+    if not request.user.is_staff:
+        return render(request, 'ai_chatbot/access_denied.html')
+    
     try:
-        # Check database connection
-        from django.db import connection
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT 1")
+        # Get analytics data for the last 30 days
+        analytics = ChatAnalytics.objects.all().order_by('-date')[:30]
         
-        # Check cache
-        cache.set('health_check', 'ok', 60)
-        cache_status = cache.get('health_check') == 'ok'
+        # Get summary statistics
+        total_sessions = sum(a.total_sessions for a in analytics) if analytics else 0
+        total_messages = sum(a.total_messages for a in analytics) if analytics else 0
+        avg_rating = sum(a.average_rating for a in analytics) / len(analytics) if analytics else 0
         
-        # Check Gemini API (optional)
-        gemini_status = 'unknown'
-        try:
-            from .services.gemini_client import GeminiAIClient
-            if hasattr(settings, 'GOOGLE_API_KEY') and settings.GOOGLE_API_KEY:
-                gemini_status = 'configured'
-            else:
-                gemini_status = 'not_configured'
-        except Exception:
-            gemini_status = 'error'
-        
-        health_data = {
-            'status': 'healthy',
-            'timestamp': datetime.now().isoformat(),
-            'services': {
-                'database': 'ok',
-                'cache': 'ok' if cache_status else 'error',
-                'gemini_api': gemini_status,
-                'local_search': 'ok',
-                'web_search': 'ok'
+        context = {
+            'analytics': analytics,
+            'summary': {
+                'total_sessions': total_sessions,
+                'total_messages': total_messages,
+                'average_rating': round(avg_rating, 1),
+                'days_analyzed': len(analytics)
             },
-            'version': '1.0.0'
+            'chart_data': {
+                'dates': [a.date.strftime('%Y-%m-%d') for a in reversed(analytics)],
+                'sessions': [a.total_sessions for a in reversed(analytics)],
+                'messages': [a.total_messages for a in reversed(analytics)],
+                'ratings': [a.average_rating for a in reversed(analytics)]
+            }
         }
         
-        return Response(health_data)
+        return render(request, 'ai_chatbot/admin_analytics.html', context)
         
     except Exception as e:
-        logger.error(f"Health check failed: {str(e)}")
-        return Response({
-            'status': 'unhealthy',
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }, status=500)
+        logger.error(f"Error in admin analytics view: {str(e)}")
+        return render(request, 'ai_chatbot/error.html', {'error': str(e)})
