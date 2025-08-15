@@ -59,7 +59,7 @@ beautifulsoup4==4.12.3
 
 # Data processing for ecommerce
 pandas==1.5.3  # For product analytics
-numpy==1.24.3  # Required for ML libraries
+numpy==1.23.5  # Required for ML libraries
 
 # Search functionality
 whoosh==2.7.4  # Lightweight search engine for products
