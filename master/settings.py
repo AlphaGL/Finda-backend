@@ -53,7 +53,7 @@ INSTALLED_APPS = [
     'django_countries',            # Country fields for shipping
     'django_filters',              # Product filtering
     'corsheaders',                 # API access
-    'mptt',                        # Category hierarchies
+    # 'mptt',                        # Category hierarchies
     'taggit',                      # Product tags
 
     # Background tasks for order processing & chatbot
