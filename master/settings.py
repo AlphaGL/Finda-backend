@@ -138,21 +138,17 @@ DATABASES = {
     }
 }
 
-# Redis cache for cart, sessions, and chatbot responses
-REDIS_URL = os.environ.get("REDIS_URL")
+
+# SIMPLIFIED FIX - Remove all problematic parameters
+REDIS_URL = os.environ.get("REDIS_URL", "redis://127.0.0.1:6379/1")
+
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
         'LOCATION': REDIS_URL,
         'KEY_PREFIX': 'finda',
-        'TIMEOUT': 3600,  # 1 hour default
-        'OPTIONS': {
-            'CONNECTION_POOL_KWARGS': {
-                'max_connections': 25,
-                'retry_on_timeout': True,
-                'health_check_interval': 30,
-            },
-        }
+        'TIMEOUT': 3600,
+        # No OPTIONS - let Django handle the connection automatically
     }
 }
 

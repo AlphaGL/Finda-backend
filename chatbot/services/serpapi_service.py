@@ -489,7 +489,7 @@ class SerpAPIService:
                 if phone and not phone.startswith('+'):
                     if phone.startswith('0'):
                         # Nigerian format, convert to international
-                        phone = f"+234{phone[1:]}"
+                        phone = f"{phone[1:]}"
                 service['phone'] = phone
                 service['phone_number'] = phone
             

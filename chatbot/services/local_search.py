@@ -277,9 +277,9 @@ class LocalSearchService:
             return {
                 'product_name': product.product_name,
                 'product_description': product.product_description[:300] + "..." if product.product_description and len(product.product_description) > 300 else (product.product_description or ""),
-                'featured_image': image_url,
+                # 'featured_image': image_url,
                 'product_price': formatted_price,
-                'original_price': f"₦{original_price:,.2f}" if original_price else None,
+                'original_price': f"{original_price:,.2f}" if original_price else None,
                 'currency': 'NGN',  # Adjust based on your system
                 'is_negotiable': getattr(product, 'is_negotiable', False),
                 'country': product.country.name if product.country else 'Nigeria',
@@ -312,7 +312,7 @@ class LocalSearchService:
             return {
                 'product_name': getattr(product, 'product_name', 'Unknown Product'),
                 'product_description': '',
-                'featured_image': None,
+                # 'featured_image': None,
                 'product_price': 'Price not available',
                 'original_price': None,
                 'currency': 'NGN',
@@ -337,7 +337,7 @@ class LocalSearchService:
             return {
                 'service_name': service.service_name,
                 'service_description': service.service_description[:300] + "..." if service.service_description and len(service.service_description) > 300 else (service.service_description or ""),
-                'featured_image': image_url,
+                # 'featured_image': image_url,
                 'country': service.country.name if service.country else 'Nigeria',
                 'state': service.state.name if service.state else '',
                 'city': service.city.name if service.city else '',
@@ -373,7 +373,7 @@ class LocalSearchService:
             return {
                 'service_name': getattr(service, 'service_name', 'Unknown Service'),
                 'service_description': '',
-                'featured_image': None,
+                # 'featured_image': None,
                 'country': 'Nigeria',
                 'state': '',
                 'city': '',
